@@ -15,6 +15,53 @@ class TestViewsSerializer(serializers.ModelSerializer):
         fields = ['voice', 'dsc', 'date_start', 'data_end', 'is_active']
 
 
+# Сериализаторы для регистрации пользователей (исполнитель или заказчик)
+class UserRegisterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username', 'first_name', 'last_name', 'email', 'password', 'role', 'is_active', 'last_activity']
+        extra_kwargs = {'password': {'write_only': True}}
+
+    def create(self, validated_data):
+        user = User.objects.create_user(**validated_data)
+        return user
+
+
+class ProfileRegisterSerializer(serializers.ModelSerializer):
+    user = UserRegisterSerializer()
+
+    class Meta:
+        model = Profile
+        fields = ['user', 'photo', 'university', 'faculty', 'department', 'disciplines', 'form_of_study', 'vk_profile', 'telegram_username']
+
+    def create(self, validated_data):
+        user_data = validated_data.pop('user')
+        user = UserRegisterSerializer.create(UserRegisterSerializer(), validated_data=user_data)
+        profile = Profile.objects.create(user=user, **validated_data)
+        return profile
+
+
+class PortfolioRegisterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Portfolio
+        fields = ['student_card', 'photo']
+
+    def create(self, validated_data):
+        student_card = validated_data.get('student_card')
+        portfolio = Portfolio.objects.create(student_card=student_card, **validated_data)
+        return portfolio
+
+
+class CustomerFeedbackRegisterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerFeedback
+        fields = ['student_card', 'photo']
+
+    def create(self, validated_data):
+        student_card = validated_data.get('student_card')
+        feedback = CustomerFeedback.objects.create(student_card=student_card, **validated_data)
+        return feedback
+
 
 class UniversitySerializer(serializers.ModelSerializer):
     class Meta:
@@ -46,16 +93,39 @@ class FormOfStudySerializer(serializers.ModelSerializer):
         fields = ('id', 'name')
 
 
+def validate_referral_code(value):
+    if value and not User.objects.filter(referral_code=value).exists():
+        raise serializers.ValidationError("Реферальный код не найден.")
+    return value
+
 
 class UserSerializer(serializers.ModelSerializer):
+    referral_code = serializers.CharField(
+        required=False,
+        allow_null=True,
+        write_only=True,
+        help_text="Реферальный код пригласившего пользователя"
+    )
+
     class Meta:
         model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'role', "is_verification")
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'role', 'referral_code')
+        extra_kwargs = {'password': {'write_only': True}, 'referral_code': {'read_only': True}}
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
         return user
+
+
+# class UserSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = User
+#         fields = ('username', 'first_name', 'last_name', 'email', 'password', 'role', "is_verification", "referral_code")
+#         extra_kwargs = {'password': {'write_only': True}, 'referral_code': {'read_only': True}}
+#
+#     def create(self, validated_data):
+#         user = User.objects.create_user(**validated_data)
+#         return user
 
 
 class ProfileSerializer(serializers.ModelSerializer):

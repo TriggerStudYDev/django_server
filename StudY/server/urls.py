@@ -7,40 +7,49 @@ from rest_framework import routers
 
 router = routers.SimpleRouter()
 
-router.register(r'universities', UniversityViewSet)
-router.register(r'faculties', FacultyViewSet)
-router.register(r'departments', DepartmentViewSet)
-router.register(r'discipline', DisciplineViewSet)
-router.register(r'education-forms', FormOfStudyViewSet)
-router.register(r'customer-feedback', CustomerFeedbackViewSet)
-router.register(r'portfolio', PortfolioViewSet)
-router.register(r'student-card-comment', StudentCardCommentViewSet)
+router.register(r'auth/universities', UniversityViewSet)
+router.register(r'auth/faculties', FacultyViewSet)
+router.register(r'auth/departments', DepartmentViewSet)
+router.register(r'auth/discipline', DisciplineViewSet)
+
+router.register(r'auth/education-forms', FormOfStudyViewSet)
+router.register(r'auth/customer-feedback', CustomerFeedbackViewSet)
+router.register(r'auth/portfolio', PortfolioViewSet)
+router.register(r'auth/student-card-comment', StudentCardCommentViewSet)
 # Получение всей информации
-router.register(r'student-card', StudentCardViewSet)
+router.register(r'auth/student-card', StudentCardViewSet)
+# router.register(r'', ReferralTokenCheckAPIView)
 
 
 urlpatterns = [
     # регистрация user
-    path('registration/general-info/', RegisterGeneralInfoAPIView.as_view(), name='register-general-info'),
+    path('auth/registration/general-info/', RegisterGeneralInfoAPIView.as_view(), name='register-general-info'),
     # регистрация profile
-    path('registration/profile', RegisterProfileInfoAPIView.as_view(), name='register-profile'),
+    path('auth/registration/profile', RegisterProfileInfoAPIView.as_view(), name='register-profile'),
     # регистрация заявки на верификацию
-    path('registration/education-info/', RegisterEducationInfoAPIView.as_view(), name='register-education-info'),
+    path('auth/registration/education-info/', RegisterEducationInfoAPIView.as_view(), name='register-education-info'),
     # Добавление обратной связи для исполнителей
-    path('registration/customer-feedback-info/', RegisterCustomerFeedbackInfoAPIView.as_view(),
+    path('auth/registration/customer-feedback-info/', RegisterCustomerFeedbackInfoAPIView.as_view(),
          name='register-customer-feedback-info'),
     # Добавление портфолио для исполнителей
-    path('registration/portfolio-info/', RegisterPortfolioInfoAPIView.as_view(),
+    path('auth/registration/portfolio-info/', RegisterPortfolioInfoAPIView.as_view(),
          name='register-portfolio-info'),
+    # Обновленная регистрация (через транзакции)
+    path('auth/register', RegisterUserView.as_view(), name='register'),
 
-    path('student-card-verification/<int:student_card_id>/', StudentCardVerificationAPIView.as_view(),
+    # Изменить статус анкеты
+    path('auth/student-card-verification/<int:student_card_id>/', StudentCardVerificationAPIView.as_view(),
          name='student-card-verification'),
-    path('student-card/update/', StudentCardUpdateView.as_view(), name='student-card/update/'),
-    # Логирование пользователя
-    path('login/', LoginAPIView.as_view(), name='login'),
+    # Обновление анкеты
+    path('auth/student-card/update/', StudentCardUpdateView.as_view(), name='student-card/update/'),
+    # Авторизация
+    path('auth/login/', LoginAPIView.as_view(), name='login'),
 
     # TODO Обновленная регистрация, пока не работает
-    path('registration/', UnifiedRegistrationAPIView.as_view(), name='unified-registration'),
+
+    path('auth/registration/', UnifiedRegistrationAPIView.as_view(), name='unified-registration'),
+
+    path('auth/referral-check/', ReferralTokenCheckAPIView.as_view(), name="referal-user-get"),
 
 
     path('', include(router.urls)),

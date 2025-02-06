@@ -6,6 +6,11 @@ from rest_framework_simplejwt.exceptions import InvalidToken
 from django.contrib.auth import get_user_model
 from rest_framework.permissions import BasePermission
 
+from drf_spectacular.utils import extend_schema
+
+
+
+
 
 
 class RoleRequired:
@@ -116,3 +121,5 @@ class IsVerified(BasePermission):
             return request.user and request.user.is_verification
         # Если required_verified=False, проверяем отсутствие верификации
         return request.user and not request.user.is_verification
+
+

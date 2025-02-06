@@ -35,8 +35,11 @@ APPEND_SLASH=False
 
 INSTALLED_APPS = [
     'server',
+    'customer',
+
     'rest_framework',
     'corsheaders',
+    'drf_spectacular',
 
     'django.contrib.admin',
     'django.contrib.auth',
@@ -91,6 +94,8 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
 }
 
 ROOT_URLCONF = 'StudY.urls'

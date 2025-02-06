@@ -13,10 +13,14 @@ admin.site.register(StudentCard)
 admin.site.register(CustomerFeedback)
 admin.site.register(Portfolio)
 admin.site.register(StudentCardComment)
+admin.site.register(Order)
 admin.site.register(OrderStatusLog)
 admin.site.register(Balance)
 admin.site.register(WithdrawalRequest)
 admin.site.register(FailedLoginAttempt)
+admin.site.register(ReferralSettings)
+admin.site.register(Referral)
+admin.site.register(ReferralActivity)
 
 
 

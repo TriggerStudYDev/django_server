@@ -41,32 +41,36 @@ class RegisterGeneralInfoAPIView(generics.CreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
 
+    def perform_create(self, serializer):
+        referral_code = serializer.validated_data.pop('referral_code', None)
+        user = serializer.save()
+        if referral_code:
+            referrer = User.objects.get(referral_code=referral_code)
+            Referral.objects.create(referrer=referrer, referred=user)
+
+
+class ReferralTokenCheckAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        referral_code = request.query_params.get('code')
+        if not referral_code:
+            return Response({"error": "Параметр 'referral_code' обязателен."}, status=400)
+
+        try:
+            user = User.objects.get(referral_code=referral_code)
+            return Response({
+                "username": user.username,
+                "role": user.role
+            })
+        except User.DoesNotExist:
+            return Response({"error": "Реферальный код не найден."}, status=404)
+
 
 class RegisterEducationInfoAPIView(generics.CreateAPIView):
     queryset = StudentCard.objects.all()
     serializer_class = StudentCardRegisterSerializer
     permission_classes = [AllowAny]
-
-    # def create(self, request, *args, **kwargs):
-    #     """
-    #     Переопределение метода create, чтобы можно было обработать вложенные данные и вернуть подробный ответ.
-    #     """
-    #     # Преобразуем данные из запроса
-    #     data = request.data
-    #
-    #     # Проверьте, есть ли все необходимые поля в запросе
-    #     if 'user' not in data or 'profile' not in data:
-    #         return Response({"detail": "User and profile are required."}, status=status.HTTP_400_BAD_REQUEST)
-    #
-    #     # Создаем сериализатор и валидация данных
-    #     serializer = self.get_serializer(data=data)
-    #     serializer.is_valid(raise_exception=True)
-    #
-    #     # Сохраняем данные в базе
-    #     student_card = serializer.save()
-    #
-    #     # Возвращаем созданную запись вместе с вложенными объектами (customer_feedback, portfolio)
-    #     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 class RegisterProfileInfoAPIView(generics.CreateAPIView):
@@ -199,9 +203,7 @@ class StudentCardViewSet(viewsets.ReadOnlyModelViewSet):
     ]
 
     def get_queryset(self):
-
         user = self.request.user
-
         if user.role in ['заказчик', 'исполнитель']:
             return StudentCard.objects.filter(user=user)
         if user.role == 'проверяющий':
@@ -356,6 +358,82 @@ class UnifiedRegistrationAPIView(generics.CreateAPIView):
             status=status.HTTP_201_CREATED,
             headers=headers
         )
+
+
+class RegisterUserView(APIView):
+    @transaction.atomic  # Начинаем транзакцию
+    def post(self, request):
+        try:
+            # Создание пользователя
+            user_serializer = UserSerializer(data=request.data.get('user'))
+            referral_code = request.data.get('referral_code')
+            if not user_serializer.is_valid():
+                return Response(user_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            user = user_serializer.save()
+            if referral_code:
+                referrer = User.objects.get(referral_code=referral_code)
+                referral = Referral.objects.create(referrer=referrer, referred=user) # проверить если ошибка, что бы явно удалялось поле
+
+            # Создание профиля пользователя
+            profile_data = request.data.get('profile', {})
+            profile_serializer = ProfileSerializer(data={**profile_data, 'user': user.id})
+            if not profile_serializer.is_valid():
+                raise ValueError("Ошибка при создании профиля.")
+            profile = profile_serializer.save()
+
+            # Создание студенческого билета
+            student_card_data = request.data.get('student_card', {})
+            student_card_serializer = StudentCardSerializer(
+                data={**student_card_data, 'user': user.id, 'profile': profile.id}
+            )
+            if not student_card_serializer.is_valid():
+                raise ValueError("Ошибка при создании студенческого билета.")
+            student_card = student_card_serializer.save()
+
+            if user.role == 'исполнитель' and not request.data.get('portfolio') and not request.data.get('customer_feedback'):
+                raise ValueError("Исполнитель должен загрузить хотя бы одно портфолио или один отзыв.")
+
+            # Создаем портфолио и отзывы
+            self._create_portfolio_and_feedback(request, student_card)
+
+            return Response({'message': 'Пользователь успешно зарегистрировался'}, status=status.HTTP_201_CREATED)
+
+        except ValueError as e:
+            self._delete_user_objects(user, profile, referral)  # Передаем referral для удаления
+            return Response({'error': e.args[0]}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            if 'user' in locals() and 'profile' in locals():
+                self._delete_user_objects(user, profile, referral)  # Передаем referral
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _create_portfolio_and_feedback(self, request, student_card):
+        """Создание портфолио и отзывов исполнителя"""
+        portfolio_data = request.data.get('portfolio', [])
+        feedback_data = request.data.get('customer_feedback', [])
+
+        # Создание портфолио
+        for portfolio_item in portfolio_data:
+            portfolio_serializer = PortfolioSerializer(data={**portfolio_item, 'student_card': student_card.id})
+            if portfolio_serializer.is_valid():
+                portfolio_serializer.save()
+            else:
+                raise ValueError("Ошибка в портфолио.")
+
+        # Создание отзывов
+        for feedback_item in feedback_data:
+            feedback_serializer = CustomerFeedbackSerializer(data={**feedback_item, 'student_card': student_card.id})
+            if feedback_serializer.is_valid():
+                feedback_serializer.save()
+            else:
+                raise ValueError("Ошибка в отзыве.")
+
+    def _delete_user_objects(self, user, profile, referral=None):
+        if referral:
+            referral.delete()
+        if user:
+            user.delete()
+        if profile:
+            profile.delete()
 
 
 class LoginAPIView(APIView):
