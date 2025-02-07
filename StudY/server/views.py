@@ -15,6 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
+from django.db import transaction
 
 from .decorators import *
 
@@ -193,10 +194,6 @@ class StudentCardVerificationAPIView(APIView):
         # Получаем объект заявителя
         student_card = StudentCard.objects.get(id=student_card_id)
 
-        # Проверка роли проверяющего
-        # if request.user.role != 'проверяющий':
-        #     return Response({"detail": "Только проверяющий может верифицировать заявки."},
-        #                     status=status.HTTP_403_FORBIDDEN)
 
         if student_card.user.role == 'исполнитель':
             available_statuses = ['Принят', 'Отклонена анкета исполнителя', 'Отправлен на доработку',
@@ -281,7 +278,6 @@ class StudentCardViewSet(viewsets.ReadOnlyModelViewSet):
 
             return queryset
 
-        # Для остальных ролей доступ запрещен
         return StudentCard.objects.none()
 
     def retrieve(self, request, *args, **kwargs):
@@ -422,111 +418,139 @@ class UnifiedRegistrationAPIView(generics.CreateAPIView):
         )
 
 
+
+
 class RegisterUserView(APIView):
     permission_classes = [AllowAny]
 
-    @transaction.atomic
     def post(self, request):
+        user = None
+        profile = None
+        referral = None
+        student_card = None
+        portfolio = None
+        feedback = None
+
         try:
+            with transaction.atomic():
+                # 1️⃣ Создание пользователя
+                user_serializer = UserSerializer(data=request.data.get('user'))
+                referral_code = request.data.get('referral_code')
 
-            user_serializer = UserSerializer(data=request.data.get('user'))
-            referral_code = request.data.get('referral_code')
+                if not user_serializer.is_valid():
+                    raise ValueError(user_serializer.errors)
 
-            if not user_serializer.is_valid():
-                return Response(user_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                user = user_serializer.save()
 
-            user = user_serializer.save()
+                # 2️⃣ Обрабатываем реферальный код
+                if referral_code:
+                    try:
+                        referrer = User.objects.get(referral_code=referral_code)
+                        referral = Referral.objects.create(referrer=referrer, referred=user)
+                    except User.DoesNotExist:
+                        raise ValueError("Некорректный реферальный код")
 
-            referral = None
-            if referral_code:
-                referrer = User.objects.filter(referral_code=referral_code).first()
-                if referrer:
-                    referral = Referral.objects.create(referrer=referrer, referred=user)
+                # 3️⃣ Создание профиля
+                profile_data = request.data.get('profile', {})
+                rank = Rank.objects.filter(rank_type='customer' if user.role == 'заказчик' else 'executor').first()
+                if not rank:
+                    raise ValueError(f"Ранг для роли {user.role} не найден.")
 
-            profile_data = request.data.get('profile', {})
-            profile_serializer = ProfileSerializer(data={**profile_data, 'user': user.id})
+                profile_serializer = ProfileSerializer(data={**profile_data, 'user': user.id, 'rank': rank.id})
+                if not profile_serializer.is_valid():
+                    raise ValueError(profile_serializer.errors)
 
-            if not profile_serializer.is_valid():
-                raise ValueError("Ошибка при создании профиля.")
+                profile = profile_serializer.save()
 
-            rank = Rank.objects.filter(rank_type='customer' if user.role == 'заказчик' else 'executor').first()
-            if not rank:
-                raise ValueError(f"Ранг для роли {user.role} не найден.")
+                # 4️⃣ Создание баланса
+                Balance.objects.get_or_create(profile=profile)
 
-            profile = profile_serializer.save(rank=rank)
+                # 5️⃣ Создание студенческого билета
+                student_card_data = request.data.get('student_card', {})
+                student_card_serializer = StudentCardRegisterSerializer(
+                    data={**student_card_data, 'user': user.id, 'profile': profile.id}
+                )
 
-            balance, _ = Balance.objects.get_or_create(profile=profile)
+                if not student_card_serializer.is_valid():
+                    raise ValueError(student_card_serializer.errors)
+                student_card = student_card_serializer.save()
 
-            if referral and referral.referrer.is_verification:
-                referral_setting = ReferralSettings.objects.filter(
-                    role='customer' if user.role == 'заказчик' else 'executor', level=1
-                ).first()
+                # 6️⃣ Обрабатываем загрузку портфолио и обратных связей, если роль исполнителя
+                if user.role == 'исполнитель':
+                    portfolio_data = request.data.get('portfolio', [])
+                    for item in portfolio_data:
+                        portfolio_serializer = RegisterPortfolioSerializer(data={**item, 'user': user.id, 'profile': profile.id})
+                        if not portfolio_serializer.is_valid():
+                            raise ValueError(portfolio_serializer.errors)
+                        portfolio = portfolio_serializer.save()
 
-                if referral_setting:
-                    bonus_to_referred = referral_setting.bonus_ref_user
+                    feedback_data = request.data.get('customer_feedback', [])
+                    for item in feedback_data:
+                        feedback_serializer = RegisterCustomerFeedbackSerializer(data={**item, 'user': user.id, 'profile': profile.id})
+                        if not feedback_serializer.is_valid():
+                            raise ValueError(feedback_serializer.errors)
+                        feedback = feedback_serializer.save()
 
-                    Transaction.objects.create(
-                        profile=profile,
-                        amount=bonus_to_referred,
-                        transaction_type="bonus_add",
-                        comment="Бонус за регистрацию по реферальной ссылке",
-                        status="completed"
-                    )
+                self._process_referral_bonus(user, profile)
 
-                    balance.fiat_balance += bonus_to_referred
-                    balance.save()
-
-            student_card_data = request.data.get('student_card', {})
-            student_card_serializer = StudentCardSerializer(
-                data={**student_card_data, 'user': user.id, 'profile': profile.id}
-            )
-
-            if not student_card_serializer.is_valid():
-                raise ValueError("Ошибка при создании студенческого билета.")
-
-            student_card = student_card_serializer.save()
-
-            if user.role == 'исполнитель' and not request.data.get('portfolio') and not request.data.get('customer_feedback'):
-                raise ValueError("Исполнитель должен загрузить хотя бы одно портфолио или один отзыв.")
-
-            self._create_portfolio_and_feedback(request, student_card)
-
-            return Response({'message': 'Пользователь успешно зарегистрирован'}, status=status.HTTP_201_CREATED)
+                return Response({'message': 'Пользователь успешно зарегистрирован'}, status=status.HTTP_201_CREATED)
 
         except ValueError as e:
-            self._delete_user_objects(user, profile, referral)
-            return Response({'error': e.args[0]}, status=status.HTTP_400_BAD_REQUEST)
+            self._delete_user_objects(user, profile, referral, student_card, portfolio, feedback)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
         except Exception as e:
-            if 'user' in locals() and 'profile' in locals():
-                self._delete_user_objects(user, profile, referral)
+            self._delete_user_objects(user, profile, referral, student_card, portfolio, feedback)
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def _create_portfolio_and_feedback(self, request, student_card):
-        portfolio_data = request.data.get('portfolio', [])
-        feedback_data = request.data.get('customer_feedback', [])
-
-        for portfolio_item in portfolio_data:
-            portfolio_serializer = PortfolioSerializer(data={**portfolio_item, 'student_card': student_card.id})
-            if portfolio_serializer.is_valid():
-                portfolio_serializer.save()
+    def _process_referral_bonus(self, user, profile):
+        """Обработка реферального бонуса"""
+        try:
+            referral = Referral.objects.get(referred=user)
+            referrer = referral.referrer  # Получаем реферера
+            if not referrer.is_verification:
+                return
+            # Получаем настройки бонусов в зависимости от роли
+            if user.role == 'заказчик':
+                referral_setting = ReferralSettings.objects.get(role='customer', level=1)
+            elif user.role == 'исполнитель':
+                referral_setting = ReferralSettings.objects.get(role='executor', level=1)
             else:
-                raise ValueError("Ошибка в портфолио.")
+                raise serializers.ValidationError(f"Неизвестная роль для начисления бонуса: {user.role}")
 
-        for feedback_item in feedback_data:
-            feedback_serializer = CustomerFeedbackSerializer(data={**feedback_item, 'student_card': student_card.id})
-            if feedback_serializer.is_valid():
-                feedback_serializer.save()
-            else:
-                raise ValueError("Ошибка в отзыве.")
+            # Начисляем бонус рефереру
+            bonus_to_referred = referral_setting.bonus_ref_user
 
-    def _delete_user_objects(self, user, profile, referral=None):
+            with transaction.atomic():
+                # Начисление бонуса приглашенному пользователю
+                Transaction.objects.create(
+                    profile=profile,
+                    amount=bonus_to_referred,
+                    transaction_type="bonus_add",
+                    comment="Бонус за регистрацию по реферальной ссылке",
+                    status="completed"
+                )
+
+                # Обновляем баланс пользователей
+                profile.balance.fiat_balance += bonus_to_referred
+                profile.balance.save()
+
+        except Referral.DoesNotExist:
+            pass
+
+    def _delete_user_objects(self, user, profile, referral=None, student_card=None, portfolio=None, feedback=None):
         if referral:
-            referral.delete()
-        if user:
-            user.delete()
+            referral.delete()  # Удаляем реферал, если был создан
         if profile:
-            profile.delete()
-
+            profile.delete()  # Удаляем профиль, если был создан
+        if student_card:
+            student_card.delete()  # Удаляем студенческий билет, если был создан
+        if portfolio:
+            portfolio.delete()  # Удаляем портфолио, если было создано
+        if feedback:
+            feedback.delete()  # Удаляем обратную связь, если была создана
+        if user:
+            user.delete()  # Удаляем пользователя, если был создан
 
 class LoginAPIView(APIView):
     permission_classes = [AllowAny]

@@ -17,10 +17,11 @@ class TestViewsSerializer(serializers.ModelSerializer):
 
 # Сериализаторы для регистрации пользователей (исполнитель или заказчик)
 class UserRegisterSerializer(serializers.ModelSerializer):
+    referral_code = serializers.CharField(required=False, allow_null=True, write_only=True)
+
     class Meta:
         model = User
-        fields = ['username', 'first_name', 'last_name', 'email', 'password', 'role', 'is_active', 'last_activity']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'role', 'referral_code')
 
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
@@ -28,28 +29,32 @@ class UserRegisterSerializer(serializers.ModelSerializer):
 
 
 class ProfileRegisterSerializer(serializers.ModelSerializer):
-    user = UserRegisterSerializer()
+    rank = serializers.PrimaryKeyRelatedField(queryset=Rank.objects.all(), required=True)
+    university = serializers.PrimaryKeyRelatedField(queryset=University.objects.all(), required=True)
+    faculty = serializers.PrimaryKeyRelatedField(queryset=Faculty.objects.all(), required=True)
+    department = serializers.PrimaryKeyRelatedField(queryset=Department.objects.all(), required=True)
+    form_of_study = serializers.PrimaryKeyRelatedField(queryset=FormOfStudy.objects.all(), required=True)
+    vk_profile = serializers.URLField(required=False)
+    telegram_username = serializers.CharField(required=False)
 
     class Meta:
         model = Profile
-        fields = ['user', 'photo', 'university', 'faculty', 'department', 'disciplines', 'form_of_study', 'vk_profile', 'telegram_username']
-
-    def create(self, validated_data):
-        user_data = validated_data.pop('user')
-        user = UserRegisterSerializer.create(UserRegisterSerializer(), validated_data=user_data)
-        profile = Profile.objects.create(user=user, **validated_data)
-        return profile
+        fields = ('user', 'rank', 'university', 'faculty', 'department', 'disciplines', 'form_of_study', 'vk_profile',
+                  'telegram_username')
 
 
-class PortfolioRegisterSerializer(serializers.ModelSerializer):
+class StudentRegisterCardSerializer(serializers.ModelSerializer):
+    student_card_number = serializers.CharField()
+    about_self = serializers.CharField()
+    status = serializers.ChoiceField(choices=StudentCard.STATUS_CHOICES)
+    photo = serializers.ImageField()
+
     class Meta:
-        model = Portfolio
-        fields = ['student_card', 'photo']
+        model = StudentCard
+        fields = ('student_card_number', 'about_self', 'status', 'photo', 'user', 'profile')
 
-    def create(self, validated_data):
-        student_card = validated_data.get('student_card')
-        portfolio = Portfolio.objects.create(student_card=student_card, **validated_data)
-        return portfolio
+
+# Сериализаторы для регистрации пользователей (исполнитель или заказчик)
 
 
 class CustomerFeedbackRegisterSerializer(serializers.ModelSerializer):
@@ -129,10 +134,12 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
+    rank = serializers.PrimaryKeyRelatedField(queryset=Rank.objects.all(), required=True)
+
     class Meta:
         model = Profile
-        fields = ('user', 'rank', 'university', 'faculty', 'department', 'disciplines', 'form_of_study', 'vk_profile',
-                  'telegram_username')
+        fields = ('user', 'rank', 'university', 'faculty', 'department', 'disciplines', 'form_of_study',
+                  'vk_profile', 'telegram_username')
 
 
 class RegisterCustomerFeedbackSerializer(serializers.ModelSerializer):
@@ -168,13 +175,10 @@ class StudentCardCommentSerializer(serializers.ModelSerializer):
 
 
 class StudentCardRegisterSerializer(serializers.ModelSerializer):
-    # customer_feedback = CustomerFeedbackSerializer(many=True, source='customerfeedback_set')
-    # portfolio = PortfolioSerializer(many=True, source='portfolio_set')
-
     class Meta:
         model = StudentCard
         fields = ('user', 'profile', 'photo', 'about_self',
-                  # 'customer_feedback', 'portfolio'
+
                   )
 
     # def create(self, validated_data):
@@ -196,7 +200,6 @@ class StudentCardRegisterSerializer(serializers.ModelSerializer):
     #     return student_card
 
 
-
 class StudentCardSerializer(serializers.ModelSerializer):
     user = UserSerializer()
     profile = ProfileSerializer()
@@ -205,13 +208,12 @@ class StudentCardSerializer(serializers.ModelSerializer):
     portfolio = PortfolioSerializer(many=True, source='portfolio_set')
     comments = StudentCardCommentSerializer(many=True)
 
-
     class Meta:
         model = StudentCard
         fields = ('id',
-            'user', 'profile', 'student_card_number', 'about_self', 'photo', 'status',
-            'customer_feedback', 'portfolio', 'comments'
-        )
+                  'user', 'profile', 'student_card_number', 'about_self', 'photo', 'status',
+                  'customer_feedback', 'portfolio', 'comments'
+                  )
 
 
 class UnifiedRegistrationSerializer(serializers.ModelSerializer):
@@ -259,9 +261,6 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(required=True)
 
 
-
-
-
 class StudentCardVerificationSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=StudentCard.STATUS_CHOICES)
     comment = serializers.CharField(required=False)
@@ -270,7 +269,6 @@ class StudentCardVerificationSerializer(serializers.Serializer):
     def validate(self, attrs):
         status = attrs.get('status')
         comment = attrs.get('comment')
-
 
         # Если статус "Отправлен на доработку" или "Отклонен", комментарий обязателен
         if status in ['Отправлен на доработку', 'Отклонена анкета исполнителя'] and not comment:
@@ -356,10 +354,3 @@ class StudentCardUpdateSerializer(serializers.ModelSerializer):
         instance.status = 'На проверке'
         instance.save()
         return instance
-
-
-
-
-
-
-
