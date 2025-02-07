@@ -423,57 +423,88 @@ class UnifiedRegistrationAPIView(generics.CreateAPIView):
 
 
 class RegisterUserView(APIView):
-    @transaction.atomic  # Начинаем транзакцию
+    permission_classes = [AllowAny]
+
+    @transaction.atomic
     def post(self, request):
         try:
-            # Создание пользователя
+
             user_serializer = UserSerializer(data=request.data.get('user'))
             referral_code = request.data.get('referral_code')
+
             if not user_serializer.is_valid():
                 return Response(user_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            user = user_serializer.save()
-            if referral_code:
-                referrer = User.objects.get(referral_code=referral_code)
-                referral = Referral.objects.create(referrer=referrer, referred=user) # проверить если ошибка, что бы явно удалялось поле
 
-            # Создание профиля пользователя
+            user = user_serializer.save()
+
+            referral = None
+            if referral_code:
+                referrer = User.objects.filter(referral_code=referral_code).first()
+                if referrer:
+                    referral = Referral.objects.create(referrer=referrer, referred=user)
+
             profile_data = request.data.get('profile', {})
             profile_serializer = ProfileSerializer(data={**profile_data, 'user': user.id})
+
             if not profile_serializer.is_valid():
                 raise ValueError("Ошибка при создании профиля.")
-            profile = profile_serializer.save()
 
-            # Создание студенческого билета
+            rank = Rank.objects.filter(rank_type='customer' if user.role == 'заказчик' else 'executor').first()
+            if not rank:
+                raise ValueError(f"Ранг для роли {user.role} не найден.")
+
+            profile = profile_serializer.save(rank=rank)
+
+            balance, _ = Balance.objects.get_or_create(profile=profile)
+
+            if referral and referral.referrer.is_verification:
+                referral_setting = ReferralSettings.objects.filter(
+                    role='customer' if user.role == 'заказчик' else 'executor', level=1
+                ).first()
+
+                if referral_setting:
+                    bonus_to_referred = referral_setting.bonus_ref_user
+
+                    Transaction.objects.create(
+                        profile=profile,
+                        amount=bonus_to_referred,
+                        transaction_type="bonus_add",
+                        comment="Бонус за регистрацию по реферальной ссылке",
+                        status="completed"
+                    )
+
+                    balance.fiat_balance += bonus_to_referred
+                    balance.save()
+
             student_card_data = request.data.get('student_card', {})
             student_card_serializer = StudentCardSerializer(
                 data={**student_card_data, 'user': user.id, 'profile': profile.id}
             )
+
             if not student_card_serializer.is_valid():
                 raise ValueError("Ошибка при создании студенческого билета.")
+
             student_card = student_card_serializer.save()
 
             if user.role == 'исполнитель' and not request.data.get('portfolio') and not request.data.get('customer_feedback'):
                 raise ValueError("Исполнитель должен загрузить хотя бы одно портфолио или один отзыв.")
 
-            # Создаем портфолио и отзывы
             self._create_portfolio_and_feedback(request, student_card)
 
-            return Response({'message': 'Пользователь успешно зарегистрировался'}, status=status.HTTP_201_CREATED)
+            return Response({'message': 'Пользователь успешно зарегистрирован'}, status=status.HTTP_201_CREATED)
 
         except ValueError as e:
-            self._delete_user_objects(user, profile, referral)  # Передаем referral для удаления
+            self._delete_user_objects(user, profile, referral)
             return Response({'error': e.args[0]}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             if 'user' in locals() and 'profile' in locals():
-                self._delete_user_objects(user, profile, referral)  # Передаем referral
+                self._delete_user_objects(user, profile, referral)
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _create_portfolio_and_feedback(self, request, student_card):
-        """Создание портфолио и отзывов исполнителя"""
         portfolio_data = request.data.get('portfolio', [])
         feedback_data = request.data.get('customer_feedback', [])
 
-        # Создание портфолио
         for portfolio_item in portfolio_data:
             portfolio_serializer = PortfolioSerializer(data={**portfolio_item, 'student_card': student_card.id})
             if portfolio_serializer.is_valid():
@@ -481,7 +512,6 @@ class RegisterUserView(APIView):
             else:
                 raise ValueError("Ошибка в портфолио.")
 
-        # Создание отзывов
         for feedback_item in feedback_data:
             feedback_serializer = CustomerFeedbackSerializer(data={**feedback_item, 'student_card': student_card.id})
             if feedback_serializer.is_valid():
