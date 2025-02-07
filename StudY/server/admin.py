@@ -21,6 +21,9 @@ admin.site.register(FailedLoginAttempt)
 admin.site.register(ReferralSettings)
 admin.site.register(Referral)
 admin.site.register(ReferralActivity)
+admin.site.register(Transaction)
+admin.site.register(Rank)
+admin.site.register(RankDescription)
 
 
 

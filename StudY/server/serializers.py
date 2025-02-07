@@ -131,7 +131,7 @@ class UserSerializer(serializers.ModelSerializer):
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ('user', 'university', 'faculty', 'department', 'disciplines', 'form_of_study', 'vk_profile',
+        fields = ('user', 'rank', 'university', 'faculty', 'department', 'disciplines', 'form_of_study', 'vk_profile',
                   'telegram_username')
 
 

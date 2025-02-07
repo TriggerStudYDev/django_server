@@ -14,6 +14,7 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.http import HttpRequest
+from django.shortcuts import get_object_or_404
 
 from .decorators import *
 
@@ -53,18 +54,25 @@ class ReferralTokenCheckAPIView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        referral_code = request.query_params.get('code')
+        referral_code = request.query_params.get('referral_code')
+
         if not referral_code:
             return Response({"error": "Параметр 'referral_code' обязателен."}, status=400)
 
-        try:
-            user = User.objects.get(referral_code=referral_code)
-            return Response({
-                "username": user.username,
-                "role": user.role
-            })
-        except User.DoesNotExist:
-            return Response({"error": "Реферальный код не найден."}, status=404)
+        user = get_object_or_404(User, referral_code=referral_code)
+
+        # Проверяем верификацию реферера
+        if not user.is_verification:
+            return Response(
+                {"error": "Реферальная ссылка неактивна, пригласивший пользователь еще не прошел верификацию."},
+                status=403
+            )
+
+        return Response({
+            "username": user.username,
+            "role": user.role,
+            "rank": user.profile.rank.rank_name if user.profile and user.profile.rank else None  # Проверка на наличие ранга
+        })
 
 
 class RegisterEducationInfoAPIView(generics.CreateAPIView):
@@ -79,12 +87,66 @@ class RegisterProfileInfoAPIView(generics.CreateAPIView):
     permission_classes = [AllowAny]
 
     def perform_create(self, serializer):
-        profile = serializer.save()
-        user = profile.user
+        user = serializer.validated_data.get('user')
+
         if not user:
             raise serializers.ValidationError("Профиль должен быть связан с пользователем.")
 
-        Balance.objects.get_or_create(user=user)
+        # Назначаем ранг в зависимости от роли пользователя
+        if user.role == 'заказчик':
+            rank = Rank.objects.filter(rank_type='customer').first()  # Ранг для заказчика
+        elif user.role == 'исполнитель':
+            rank = Rank.objects.filter(rank_type='executor').first()  # Ранг для исполнителя
+        else:
+            raise serializers.ValidationError(f"Невозможно определить ранг для роли {user.role}")
+
+        # Проверяем, найден ли ранг
+        if not rank:
+            raise serializers.ValidationError(f"Ранг для роли {user.role} не найден.")
+
+        # Создаем профиль с установленным рангом
+        profile = serializer.save(rank=rank)
+
+        # Создаем баланс пользователя, если его нет
+        Balance.objects.get_or_create(profile=profile)
+
+
+        # Проверяем наличие реферальной связи
+        try:
+            referral = Referral.objects.get(referred=user)
+            referrer = referral.referrer  # Получаем реферера
+            if not referrer.is_verification:
+                return
+            # Получаем настройки бонусов в зависимости от роли
+            if user.role == 'заказчик':
+                referral_setting = ReferralSettings.objects.get(role='customer', level=1)
+            elif user.role == 'исполнитель':
+                referral_setting = ReferralSettings.objects.get(role='executor', level=1)
+            else:
+                raise serializers.ValidationError(f"Неизвестная роль для начисления бонуса: {user.role}")
+
+            # Начисляем бонус рефереру
+            bonus_to_referred = referral_setting.bonus_ref_user
+
+            with transaction.atomic():
+
+                # Начисление бонуса приглашенному пользователю
+                Transaction.objects.create(
+                    profile=profile,
+                    amount=bonus_to_referred,
+                    transaction_type="bonus_add",
+                    comment="Бонус за регистрацию по реферальной ссылке",
+                    status="completed"
+                )
+
+                # Обновляем баланс пользователей
+                profile.balance.fiat_balance += bonus_to_referred
+                profile.balance.save()
+
+
+
+        except Referral.DoesNotExist:
+           pass
 
 
 class RegisterCustomerFeedbackInfoAPIView(generics.CreateAPIView):

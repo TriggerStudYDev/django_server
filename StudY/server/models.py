@@ -47,7 +47,8 @@ class User(AbstractUser):
     last_name = models.CharField(verbose_name='Фамилия', max_length=100, default='Админ')
     middle_name = models.CharField(verbose_name='Отчество', max_length=100, blank=True, null=True)
 
-    role = models.CharField(verbose_name='Роль пользователя', max_length=20, choices=ROLE_CHOICES, default='администратор')
+    role = models.CharField(verbose_name='Роль пользователя', max_length=20, choices=ROLE_CHOICES,
+                            default='администратор')
     is_active = models.BooleanField(verbose_name='Активен', default=True)
     last_activity = models.DateTimeField(verbose_name='Дата последней активности', auto_now=True)
     is_verification = models.BooleanField(verbose_name='Верификация', default=False)
@@ -61,7 +62,7 @@ class User(AbstractUser):
 
     def generate_referral_code(self):
         if self.role in ['заказчик', 'исполнитель']:
-        # Генерация кода из 8 символов (буквы + цифры)
+            # Генерация кода из 8 символов (буквы + цифры)
             alphabet = string.ascii_uppercase + string.digits
             code = ''.join(secrets.choice(alphabet) for _ in range(20))
 
@@ -154,6 +155,7 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='Пользователь')
     photo = models.ImageField(verbose_name='Фотография', upload_to='user_profile_photo/%Y/%m/%d/', null=True,
                               blank=True)
+    rank = models.ForeignKey('Rank', verbose_name='Ранг', on_delete=models.PROTECT)
     university = models.ForeignKey(University, on_delete=models.SET_NULL, null=True, verbose_name='Университет')
     faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL, null=True, verbose_name='Факультет')
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, verbose_name='Кафедра')
@@ -164,18 +166,60 @@ class Profile(models.Model):
     telegram_username = models.CharField(verbose_name='Телеграмм', max_length=100, blank=True, null=True, unique=True)
 
 
+class Rank(models.Model):
+    RANK_TYPE_CHOICES = [
+        ('customer', 'Заказчик'),
+        ('executor', 'Исполнитель'),
+    ]
+
+    rank_name = models.CharField(max_length=255, verbose_name="Название ранга")
+    rank_type = models.CharField(max_length=10, choices=RANK_TYPE_CHOICES, verbose_name="Тип ранга")
+    rank_price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Цена ранга")
+    rank_image_url = models.ImageField(null=True, blank=True, verbose_name='Фотография',
+                                       upload_to='rank/photo/%Y/%m/%d/')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    def __str__(self):
+        return f'{self.rank_name} - {self.rank_type}'
+
+    class Meta:
+        verbose_name = "Ранг"
+        verbose_name_plural = "Ранги"
+
+
+class RankDescription(models.Model):
+    PRIVILEGE_TYPE_CHOICES = [
+        ('quantitative', 'Количественный'),
+        ('unique', 'Уникальный'),
+    ]
+
+    rank = models.ForeignKey(Rank, related_name='descriptions', on_delete=models.CASCADE, verbose_name="Ранг")
+    description_text = models.TextField(verbose_name="Описание привилегии")
+    privilege_type = models.CharField(max_length=15, choices=PRIVILEGE_TYPE_CHOICES, verbose_name="Тип привилегии")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    def __str__(self):
+        return f"Описание для {self.rank.rank_name}"
+
+    class Meta:
+        verbose_name = "Описание ранга"
+        verbose_name_plural = "Описания рангов"
+
+
 class StudentCard(models.Model):
     class Meta:
         verbose_name = 'Верификация аккаунта'
         verbose_name_plural = 'Верификация аккаунтов'
 
     STATUS_CHOICES = [
-            ('На проверке', 'На проверке'),
-            ('Отклонена верификация по СБ', 'Отклонена верификация по СБ'),
-            ('Отклонена анкета исполнителя', 'Отклонена анкета исполнителя'),
-            ('Отправлен на доработку', 'Отправлен на доработку'),
-            ('Принят', 'Принят')
-        ]
+        ('На проверке', 'На проверке'),
+        ('Отклонена верификация по СБ', 'Отклонена верификация по СБ'),
+        ('Отклонена анкета исполнителя', 'Отклонена анкета исполнителя'),
+        ('Отправлен на доработку', 'Отправлен на доработку'),
+        ('Принят', 'Принят')
+    ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='Пользователь')
     profile = models.OneToOneField(Profile, on_delete=models.CASCADE, verbose_name='Пользователь')
@@ -237,6 +281,9 @@ class ReferralSettings(models.Model):
         verbose_name="Роль"
     )
     level = models.PositiveIntegerField(verbose_name="Уровень")
+    bonus_ref_user = models.DecimalField(max_digits=5,
+                                         decimal_places=2,
+                                         verbose_name="Зачисление реф бонусов", null=True, blank=True)
     bonus = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -360,6 +407,7 @@ class Order(models.Model):
         ('Лабораторная', 'Лабораторная'),
         ('Курсовой', 'Курсовой'),
         ('Диплом', 'Диплом'),
+        ('Другое', 'Другое',)
     ]
 
     customer = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='orders', verbose_name='Заказчик')
@@ -407,14 +455,15 @@ class Balance(models.Model):
         verbose_name = 'Баланс'
         verbose_name_plural = 'Баланс пользователей'
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='Пользователь')
-    fiat_balance = models.DecimalField(verbose_name='Фиатный баланс', max_digits=10, decimal_places=2, default=0)
-    frozen_balance = models.DecimalField(verbose_name='Замороженный баланс', max_digits=10, decimal_places=2, default=0)
+    profile = models.OneToOneField(Profile, on_delete=models.CASCADE, verbose_name='Профиль')
+    fiat_balance = models.DecimalField(verbose_name='Фиатный счет', max_digits=10, decimal_places=2, default=0)
+    frozen_balance = models.DecimalField(verbose_name='Замороженный счет', max_digits=10, decimal_places=2, default=0)
+    bonus_balance = models.DecimalField(verbose_name='Бонусный счет', max_digits=10, decimal_places=2, default=0)
     forfeited_balance = models.DecimalField(verbose_name='Баланс упущенной прибыли', max_digits=10, decimal_places=2,
                                             default=0)
 
     def __str__(self):
-        return f'Баланс пользователя {self.user.username}'
+        return f'Баланс пользователя {self.profile.user.username}'
 
 
 class WithdrawalRequest(models.Model):
@@ -439,6 +488,40 @@ class WithdrawalRequest(models.Model):
 
     def __str__(self):
         return f'Заявка на вывод средств пользователя {self.user.username}'
+
+
+class Transaction(models.Model):
+    TRANSACTION_TYPES = [
+        ('bonus_add', 'Пополнение бонусов'),
+        ("bonus_transfer", 'Перевод бонусов'),
+        ('deposit', 'Пополнение'),
+        ('withdrawal', 'Вывод'),
+        ('payment', 'Оплата'),
+        ('refund', 'Возврат'),
+        ('freeze', 'Заморозка'),
+        ('unfreeze', 'Разморозка'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'В обработке'),
+        ('completed', 'Завершено'),
+        ('cancel', "Отклонено"),
+        ('failed', 'Ошибка'),
+    ]
+
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="transactions", verbose_name="Профиль")
+    amount = models.DecimalField(verbose_name="Сумма", max_digits=10, decimal_places=2)
+    transaction_type = models.CharField(verbose_name="Тип транзакции", max_length=20, choices=TRANSACTION_TYPES)
+    comment = models.CharField(verbose_name='Комментарий', max_length=155)
+    status = models.CharField(verbose_name="Статус", max_length=10, choices=STATUS_CHOICES, default='completed')
+    description = models.TextField(verbose_name="Описание", blank=True, null=True)
+    created_at = models.DateTimeField(verbose_name="Дата создания", auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.profile.user.username} | {self.transaction_type} | {self.amount} | {self.status}"
+
+    class Meta:
+        ordering = ['-created_at']
 
 
 class FailedLoginAttempt(models.Model):
