@@ -5,6 +5,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .models import *
+from payments.models import *
+
 from rest_framework import generics, viewsets
 from rest_framework.decorators import action
 from rest_framework.views import APIView
@@ -20,23 +22,6 @@ from django.db import transaction
 from .decorators import *
 
 
-class ExampleViewSet(ModelViewSet):
-    queryset = ExampleModel.objects.all()
-    serializer_class = ExampleModelSerializer
-    permission_classes = [AllowAny]
-
-
-class TestViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = TestViews.objects.all()
-    serializer_class = TestViewsSerializer
-    permission_classes = [AllowAny]
-
-
-class TestViewCreateAPIView(generics.CreateAPIView):
-    queryset = TestViews.objects.all()
-    serializer_class = TestViewsSerializer
-    permission_classes = [AllowAny]
-
 
 class RegisterGeneralInfoAPIView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -46,9 +31,12 @@ class RegisterGeneralInfoAPIView(generics.CreateAPIView):
     def perform_create(self, serializer):
         referral_code = serializer.validated_data.pop('referral_code', None)
         user = serializer.save()
-        if referral_code:
-            referrer = User.objects.get(referral_code=referral_code)
-            Referral.objects.create(referrer=referrer, referred=user)
+        try:
+            if referral_code:
+                referrer = User.objects.get(referral_code=referral_code)
+                Referral.objects.create(referrer=referrer, referred=user)
+        except User.DoesNotExist:
+           pass
 
 
 class ReferralTokenCheckAPIView(APIView):
@@ -144,8 +132,6 @@ class RegisterProfileInfoAPIView(generics.CreateAPIView):
                 profile.balance.fiat_balance += bonus_to_referred
                 profile.balance.save()
 
-
-
         except Referral.DoesNotExist:
            pass
 
@@ -155,36 +141,11 @@ class RegisterCustomerFeedbackInfoAPIView(generics.CreateAPIView):
     serializer_class = RegisterCustomerFeedbackSerializer
     permission_classes = [AllowAny]
 
-    # def perform_create(self, serializer):
-    #     user = self.request.user
-    #
-    #     if not hasattr(user, 'profile'):
-    #         raise serializers.ValidationError("У пользователя отсутствует связанный профиль.")
-    #
-    #         # Проверяем роль пользователя
-    #     if user.role != 'исполнитель':
-    #         raise serializers.ValidationError(
-    #             "Добавление документов доступно только для пользователей с ролью 'исполнитель'!"
-    #         )
-
 
 class RegisterPortfolioInfoAPIView(generics.CreateAPIView):
     queryset = Portfolio.objects.all()
     serializer_class = RegisterPortfolioSerializer
     permission_classes = [AllowAny]
-
-    # def perform_create(self, serializer):
-    #     user = self.request.user
-    #
-    #     # if not hasattr(user, 'profile'):
-    #     #     raise serializers.ValidationError("У пользователя отсутствует связанный профиль.")
-    #
-    #         # Проверяем роль пользователя
-    #     if user.role != 'исполнитель':
-    #         raise serializers.ValidationError(
-    #             f"Добавление документов доступно только для пользователей с ролью 'исполнитель'!"
-    #             f"Ваш польвзоатель: {user}"
-    #         )
 
 
 class StudentCardVerificationAPIView(APIView):
@@ -225,17 +186,14 @@ class StudentCardVerificationAPIView(APIView):
                 return Response({"detail": "При одобрении заявки необходимо ввести номер студенческого билета."},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            # Обновляем статус заявки
             student_card.status = status_veref
             student_card.save()
 
-            # Обновление активности пользователя
             if status_veref == 'Принят':
                 student_card.student_card_number = student_card_number
                 student_card.user.is_verification = True
                 student_card.user.save()
 
-            # Добавление комментария, если он есть
             if comment:
                 StudentCardComment.objects.create(
                     student_card=student_card,
@@ -393,29 +351,6 @@ class FormOfStudyViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = FormOfStudy.objects.all()
     serializer_class = FormOfStudySerializer
     permission_classes = [AllowAny]
-
-
-class UnifiedRegistrationAPIView(generics.CreateAPIView):
-    serializer_class = UnifiedRegistrationSerializer
-    permission_classes = [AllowAny]
-
-    @transaction.atomic
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = serializer.save()
-
-        # Формируем ответ
-        headers = self.get_success_headers(serializer.data)
-        return Response(
-            {
-                "detail": "Регистрация успешно выполнена. Аккаунт ожидает проверки модератором.",
-                "user_id": user.id,
-            },
-            status=status.HTTP_201_CREATED,
-            headers=headers
-        )
 
 
 

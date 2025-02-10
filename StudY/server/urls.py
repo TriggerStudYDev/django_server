@@ -47,7 +47,7 @@ urlpatterns = [
 
     # TODO Обновленная регистрация, пока не работает
 
-    path('auth/registration/', UnifiedRegistrationAPIView.as_view(), name='unified-registration'),
+
 
     path('auth/referral-check/', ReferralTokenCheckAPIView.as_view(), name="referal-user-get"),
 

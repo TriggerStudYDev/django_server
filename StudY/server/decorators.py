@@ -8,11 +8,6 @@ from rest_framework.permissions import BasePermission
 
 from drf_spectacular.utils import extend_schema
 
-
-
-
-
-
 class RoleRequired:
     def __init__(self, roles, error_message="У вас нет доступа к этому ресурсу."):
         self.roles = roles
@@ -106,7 +101,6 @@ class IsRole(BasePermission):
         self.allowed_roles = allowed_roles
 
     def has_permission(self, request, view):
-        # Проверяем, есть ли у пользователя роль в списке разрешенных
         return request.user and request.user.role in self.allowed_roles
 
 

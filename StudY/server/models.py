@@ -5,32 +5,6 @@ import secrets
 import string
 
 
-class ExampleModel(models.Model):
-    name = models.CharField(verbose_name='Имя', max_length=100)
-    dsc = models.TextField(verbose_name='Описание')
-
-
-class TestViews(models.Model):
-    class Meta:
-        verbose_name = 'Тестовая таблица'
-        verbose_name_plural = 'Тестовые таблицы'
-
-    SELECT = [
-        ('voice1', 'Выбор 1'),
-        ('voice2', 'Выбор 2'),
-        ('voice3', 'Выбор 3'),
-    ]
-
-    voice = models.CharField(verbose_name='Выбор 1', max_length=10, choices=SELECT)
-    dsc = models.TextField(verbose_name='Описание')
-    date_start = models.DateField(verbose_name='Дата создания', auto_created=True)
-    data_end = models.DateTimeField(verbose_name='Дата завершения')
-    is_active = models.BooleanField(verbose_name='Активный', default=True)
-
-
-# Актуальные таблицы
-
-
 class User(AbstractUser):
     class Meta:
         verbose_name = 'Пользователь'
@@ -41,6 +15,7 @@ class User(AbstractUser):
         ('исполнитель', 'Исполнитель'),
         ('проверяющий', 'Проверяющий'),
         ('администратор', 'Администратор'),
+        ("finance", 'Финансист')
     ]
 
     first_name = models.CharField(verbose_name='Имя', max_length=100, default='Админ')
@@ -448,80 +423,6 @@ class OrderStatusLog(models.Model):
 
     def __str__(self):
         return f'Лог статуса для заказа {self.order.title} ({self.status})'
-
-
-class Balance(models.Model):
-    class Meta:
-        verbose_name = 'Баланс'
-        verbose_name_plural = 'Баланс пользователей'
-
-    profile = models.OneToOneField(Profile, on_delete=models.CASCADE, verbose_name='Профиль')
-    fiat_balance = models.DecimalField(verbose_name='Фиатный счет', max_digits=10, decimal_places=2, default=0)
-    frozen_balance = models.DecimalField(verbose_name='Замороженный счет', max_digits=10, decimal_places=2, default=0)
-    bonus_balance = models.DecimalField(verbose_name='Бонусный счет', max_digits=10, decimal_places=2, default=0)
-    forfeited_balance = models.DecimalField(verbose_name='Баланс упущенной прибыли', max_digits=10, decimal_places=2,
-                                            default=0)
-
-    def __str__(self):
-        return f'Баланс пользователя {self.profile.user.username}'
-
-
-class WithdrawalRequest(models.Model):
-    class Meta:
-        verbose_name = 'Заявка на вывод средств'
-        verbose_name_plural = 'Заявки на вывод средств'
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='Пользователь')
-    amount = models.DecimalField(verbose_name='Сумма', max_digits=10, decimal_places=2)
-    card_number = models.CharField(verbose_name='Номер карты', max_length=255)
-    status = models.CharField(
-        verbose_name='Статус заявки', max_length=40, choices=[
-            ('В обработке', 'В обработке'),
-            ('Завершена', 'Завершена'),
-            ('Отклонена', 'Отклонена')
-        ], default='В обработке'
-    )
-    date_submitted = models.DateTimeField(verbose_name='Дата подачи заявки', auto_now_add=True)
-    date_updated = models.DateTimeField(verbose_name='Дата обновления', auto_now=True)
-    date_completed = models.DateTimeField(verbose_name='Дата завершения', null=True, blank=True)
-    comment = models.CharField(verbose_name='Комментарий', max_length=255, null=True, blank=True)
-
-    def __str__(self):
-        return f'Заявка на вывод средств пользователя {self.user.username}'
-
-
-class Transaction(models.Model):
-    TRANSACTION_TYPES = [
-        ('bonus_add', 'Пополнение бонусов'),
-        ("bonus_transfer", 'Перевод бонусов'),
-        ('deposit', 'Пополнение'),
-        ('withdrawal', 'Вывод'),
-        ('payment', 'Оплата'),
-        ('refund', 'Возврат'),
-        ('freeze', 'Заморозка'),
-        ('unfreeze', 'Разморозка'),
-    ]
-
-    STATUS_CHOICES = [
-        ('pending', 'В обработке'),
-        ('completed', 'Завершено'),
-        ('cancel', "Отклонено"),
-        ('failed', 'Ошибка'),
-    ]
-
-    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name="transactions", verbose_name="Профиль")
-    amount = models.DecimalField(verbose_name="Сумма", max_digits=10, decimal_places=2)
-    transaction_type = models.CharField(verbose_name="Тип транзакции", max_length=20, choices=TRANSACTION_TYPES)
-    comment = models.CharField(verbose_name='Комментарий', max_length=155)
-    status = models.CharField(verbose_name="Статус", max_length=10, choices=STATUS_CHOICES, default='completed')
-    description = models.TextField(verbose_name="Описание", blank=True, null=True)
-    created_at = models.DateTimeField(verbose_name="Дата создания", auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.profile.user.username} | {self.transaction_type} | {self.amount} | {self.status}"
-
-    class Meta:
-        ordering = ['-created_at']
 
 
 class FailedLoginAttempt(models.Model):

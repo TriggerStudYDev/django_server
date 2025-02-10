@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-0et1(=plxu-33v%k%to$7%#6=5r+951jz-_(v#91ub0gi)m1g9
 DEBUG = True
 
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
 APPEND_SLASH=False
 
 # Application definition
@@ -36,6 +36,7 @@ APPEND_SLASH=False
 INSTALLED_APPS = [
     'server',
     'customer',
+    'payments',
 
     'rest_framework',
     'corsheaders',
@@ -64,6 +65,7 @@ MIDDLEWARE = [
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
+    'http://localhost:5173',
 ]
 
 CORS_ALLOW_CREDENTIALS = True

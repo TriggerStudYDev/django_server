@@ -3,18 +3,6 @@ from django.db import transaction
 from .models import *
 
 
-class ExampleModelSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ExampleModel
-        fields = '__all__'
-
-
-class TestViewsSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TestViews
-        fields = ['voice', 'dsc', 'date_start', 'data_end', 'is_active']
-
-
 # Сериализаторы для регистрации пользователей (исполнитель или заказчик)
 class UserRegisterSerializer(serializers.ModelSerializer):
     referral_code = serializers.CharField(required=False, allow_null=True, write_only=True)
@@ -216,44 +204,6 @@ class StudentCardSerializer(serializers.ModelSerializer):
                   )
 
 
-class UnifiedRegistrationSerializer(serializers.ModelSerializer):
-    profile = ProfileSerializer()
-    student_card = StudentCardRegisterSerializer()
-    customer_feedback = RegisterCustomerFeedbackSerializer(many=True, required=False)
-    portfolio = RegisterPortfolioSerializer(many=True, required=False)
-
-    class Meta:
-        model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'role',
-                  'profile', 'student_card', 'customer_feedback', 'portfolio')
-        extra_kwargs = {'password': {'write_only': True}}
-
-    @transaction.atomic
-    def create(self, validated_data):
-        # Извлекаем вложенные данные
-        profile_data = validated_data.pop('profile')
-        student_card_data = validated_data.pop('student_card')
-        customer_feedback_data = validated_data.pop('customer_feedback', [])
-        portfolio_data = validated_data.pop('portfolio', [])
-
-        # Создаем пользователя
-        user = User.objects.create_user(**validated_data)
-        user.is_verification = False  # По умолчанию аккаунт не активен
-        user.save()
-
-        # Создаем профиль
-        profile = Profile.objects.create(user=user, **profile_data)
-
-        # Создаем студенческий билет
-        student_card = StudentCard.objects.create(user=user, profile=profile, **student_card_data)
-
-        # Добавляем обратные связи и портфолио
-        for feedback in customer_feedback_data:
-            CustomerFeedback.objects.create(student_card=student_card, **feedback)
-        for portfolio_item in portfolio_data:
-            Portfolio.objects.create(student_card=student_card, **portfolio_item)
-
-        return user
 
 
 class LoginSerializer(serializers.Serializer):
@@ -270,10 +220,8 @@ class StudentCardVerificationSerializer(serializers.Serializer):
         status = attrs.get('status')
         comment = attrs.get('comment')
 
-        # Если статус "Отправлен на доработку" или "Отклонен", комментарий обязателен
         if status in ['Отправлен на доработку', 'Отклонена анкета исполнителя'] and not comment:
             raise serializers.ValidationError("Комментарий обязателен при отклонении или отправке на доработку.")
-
         return attrs
 
 
