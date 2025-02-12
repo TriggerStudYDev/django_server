@@ -459,3 +459,42 @@ class FailedLoginAttempt(models.Model):
     def lock_account(self):
         self.block_until = timezone.now() + timezone.timedelta(minutes=10)
         self.save()
+
+
+class RankSettings(models.Model):
+    class Meta:
+        verbose_name = "Настройки ранга"
+        verbose_name_plural = "Настройки рангов"
+
+    type_role = models.CharField(verbose_name='Тип пользователя', max_length=20, choices=[('executer', 'исполнитель'),
+                                                                                          ('customer', 'заказчик')])
+    rank = models.OneToOneField(Rank, related_name="settings", on_delete=models.CASCADE, verbose_name="Ранг")
+
+    # Количественные параметры (int)
+    discount_internal_purchases = models.IntegerField(default=0, verbose_name="Скидка на внутренние покупки (%)")
+    referral_bonus_self = models.IntegerField(default=0, verbose_name="Бонус за приглашенного пользователя (₽)")
+    referral_bonus_invited = models.IntegerField(default=0, verbose_name="Бонус для приглашенного пользователя (₽)")
+    discount_orders = models.IntegerField(default=0, verbose_name="Скидка на заказы (%)")
+    commission_reduction = models.IntegerField(default=0, verbose_name="Снижение комиссии от заказа (%)")
+
+    # Уникальные привилегии (bool)
+    notifications_to_executor = models.BooleanField(default=False, verbose_name="Уведомления исполнителю")
+    market_price_stats = models.BooleanField(default=False, verbose_name="Вывод статистики рыночных цен")
+    extra_discount_per_order = models.BooleanField(default=False, verbose_name="Дополнительная скидка после каждого заказа")
+    visibility_other_universities = models.BooleanField(default=False, verbose_name="Видимость исполнителей из других университетов")
+    bonus_to_fiat_transfer = models.BooleanField(default=False, verbose_name="Перевод бонусов в фиат")
+
+    # Привилегии исполнителя (bool)
+    monthly_contests = models.BooleanField(default=False, verbose_name="Участие в ежемесячных конкурсах")
+    create_internal_courses = models.BooleanField(default=False, verbose_name="Доступ к созданию внутренних курсов")
+    publish_articles = models.BooleanField(default=False, verbose_name="Публикация статей")
+    upload_work_to_study = models.BooleanField(default=False, verbose_name="Загрузка успешных работ в справочник StudY")
+    mandatory_review = models.BooleanField(default=False, verbose_name="Обязательный отзыв от заказчика")
+    unlimited_fiat_withdrawals = models.BooleanField(default=False, verbose_name="Вывод фиатных средств без ограничений")
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    def __str__(self):
+        return f"Настройки ранга {self.rank.rank_name}"
+

@@ -20,6 +20,7 @@ admin.site.register(Referral)
 admin.site.register(ReferralActivity)
 admin.site.register(Rank)
 admin.site.register(RankDescription)
+admin.site.register(RankSettings)
 
 
 

@@ -26,7 +26,7 @@ class WithdrawalRequest(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='Пользователь')
     amount = models.DecimalField(verbose_name='Сумма', max_digits=10, decimal_places=2)
-    card_number = models.CharField(verbose_name='Номер карты', max_length=255)
+    card_number = models.CharField(verbose_name='Номер кредитной карты', max_length=255, null=True, blank=True)
     status = models.CharField(
         verbose_name='Статус заявки', max_length=40, choices=[
             ('pending', 'В обработке'),
@@ -42,7 +42,7 @@ class WithdrawalRequest(models.Model):
     comment = models.CharField(verbose_name='Комментарий', max_length=255, null=True, blank=True)
     comment_user = models.CharField(verbose_name='Комментарий пользователя', max_length=255, null=True, blank=True)
     comment_whores = models.CharField(verbose_name='Комментарий шлюза', max_length=255, null=True, blank=True)
-    number_credit_card = models.CharField(verbose_name='Номер кредитной карты', max_length=20, null=True, blank=True)
+
 
     def __str__(self):
         return f'Вывод {self.user.username} | {self.amount} ({self.get_status_display()})'

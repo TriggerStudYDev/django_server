@@ -129,7 +129,7 @@ class RegisterProfileInfoAPIView(generics.CreateAPIView):
                 )
 
                 # Обновляем баланс пользователей
-                profile.balance.fiat_balance += bonus_to_referred
+                profile.balance.bonus_balance += bonus_to_referred
                 profile.balance.save()
 
         except Referral.DoesNotExist:
@@ -373,7 +373,7 @@ class RegisterUserView(APIView):
                 referral_code = request.data.get('referral_code')
 
                 if not user_serializer.is_valid():
-                    raise ValueError(user_serializer.errors)
+                    raise ValueError(f"Ошибка в данных пользователя: {user_serializer.errors}")
 
                 user = user_serializer.save()
 
@@ -393,7 +393,7 @@ class RegisterUserView(APIView):
 
                 profile_serializer = ProfileSerializer(data={**profile_data, 'user': user.id, 'rank': rank.id})
                 if not profile_serializer.is_valid():
-                    raise ValueError(profile_serializer.errors)
+                    raise ValueError(f"Ошибка в данных профиля: {profile_serializer.errors}")
 
                 profile = profile_serializer.save()
 
@@ -407,7 +407,7 @@ class RegisterUserView(APIView):
                 )
 
                 if not student_card_serializer.is_valid():
-                    raise ValueError(student_card_serializer.errors)
+                    raise ValueError(f"Ошибка в данных студенческого билета: {student_card_serializer.errors}")
                 student_card = student_card_serializer.save()
 
                 # 6️⃣ Обрабатываем загрузку портфолио и обратных связей, если роль исполнителя
@@ -416,14 +416,14 @@ class RegisterUserView(APIView):
                     for item in portfolio_data:
                         portfolio_serializer = RegisterPortfolioSerializer(data={**item, 'user': user.id, 'profile': profile.id})
                         if not portfolio_serializer.is_valid():
-                            raise ValueError(portfolio_serializer.errors)
+                            raise ValueError(f"Ошибка в данных портфолио: {portfolio_serializer.errors}")
                         portfolio = portfolio_serializer.save()
 
                     feedback_data = request.data.get('customer_feedback', [])
                     for item in feedback_data:
                         feedback_serializer = RegisterCustomerFeedbackSerializer(data={**item, 'user': user.id, 'profile': profile.id})
                         if not feedback_serializer.is_valid():
-                            raise ValueError(feedback_serializer.errors)
+                            raise ValueError(f"Ошибка в данных обратной связи: {feedback_serializer.errors}")
                         feedback = feedback_serializer.save()
 
                 self._process_referral_bonus(user, profile)
@@ -436,7 +436,7 @@ class RegisterUserView(APIView):
 
         except Exception as e:
             self._delete_user_objects(user, profile, referral, student_card, portfolio, feedback)
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': f"Ошибка на сервере: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _process_referral_bonus(self, user, profile):
         """Обработка реферального бонуса"""
