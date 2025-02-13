@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.db import transaction
 from .models import *
+from rank.models import *
 
 
 # Сериализаторы для регистрации пользователей (исполнитель или заказчик)
@@ -110,17 +111,6 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
 
-# class UserSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = User
-#         fields = ('username', 'first_name', 'last_name', 'email', 'password', 'role', "is_verification", "referral_code")
-#         extra_kwargs = {'password': {'write_only': True}, 'referral_code': {'read_only': True}}
-#
-#     def create(self, validated_data):
-#         user = User.objects.create_user(**validated_data)
-#         return user
-
-
 class ProfileSerializer(serializers.ModelSerializer):
     rank = serializers.PrimaryKeyRelatedField(queryset=Rank.objects.all(), required=True)
 
@@ -169,25 +159,6 @@ class StudentCardRegisterSerializer(serializers.ModelSerializer):
 
                   )
 
-    # def create(self, validated_data):
-    #     # Извлечение вложенных данных
-    #     customer_feedback_data = validated_data.pop('customerfeedback_set', [])
-    #     portfolio_data = validated_data.pop('portfolio_set', [])
-    #
-    #     # Создание основной записи StudentCard
-    #     student_card = StudentCard.objects.create(**validated_data)
-    #
-    #     # Создание обратных отзывов
-    #     for feedback in customer_feedback_data:
-    #         CustomerFeedback.objects.create(student_card=student_card, **feedback)
-    #
-    #     # Создание портфолио
-    #     for portfolio_item in portfolio_data:
-    #         Portfolio.objects.create(student_card=student_card, **portfolio_item)
-    #
-    #     return student_card
-
-
 class StudentCardSerializer(serializers.ModelSerializer):
     user = UserSerializer()
     profile = ProfileSerializer()
@@ -218,8 +189,8 @@ class StudentCardVerificationSerializer(serializers.Serializer):
         status = attrs.get('status')
         comment = attrs.get('comment')
 
-        if status in ['Отправлен на доработку', 'Отклонена анкета исполнителя'] and not comment:
-            raise serializers.ValidationError("Комментарий обязателен при отклонении или отправке на доработку.")
+        if status in ['Отправлен на доработку', 'Отклонена анкета исполнителя', 'Отклонена верификация по СБ'] and not comment:
+            raise serializers.ValidationError("Комментарий обязателен при отклонении")
         return attrs
 
 

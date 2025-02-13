@@ -6,6 +6,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .models import *
 from payments.models import *
+from rank.models import *
 
 from rest_framework import generics, viewsets
 from rest_framework.decorators import action
@@ -155,7 +156,6 @@ class StudentCardVerificationAPIView(APIView):
         # Получаем объект заявителя
         student_card = StudentCard.objects.get(id=student_card_id)
 
-
         if student_card.user.role == 'исполнитель':
             available_statuses = ['Принят', 'Отклонена анкета исполнителя', 'Отправлен на доработку',
                                   'Отклонена верификация по СБ']
@@ -186,11 +186,17 @@ class StudentCardVerificationAPIView(APIView):
                 return Response({"detail": "При одобрении заявки необходимо ввести номер студенческого билета."},
                                 status=status.HTTP_400_BAD_REQUEST)
 
+            # Проверка уникальности номера студенческого билета
+            if student_card_number and StudentCard.objects.filter(student_card_number=student_card_number).exclude(id=student_card.id).exists():
+                return Response({"detail": "Студенческий билет с таким номером уже зарегистрирован."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
             student_card.status = status_veref
             student_card.save()
 
             if status_veref == 'Принят':
                 student_card.student_card_number = student_card_number
+                student_card.save()
                 student_card.user.is_verification = True
                 student_card.user.save()
 

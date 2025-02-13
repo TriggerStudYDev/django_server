@@ -16,14 +16,17 @@ from .serializers import *
 from .services import process_transaction
 
 
-
 class CreateWithdrawalRequest(APIView):
-    permission_classes = [IsAuthenticated,
-                          partial(IsRole, allowed_roles=['исполнитель', 'заказчик']),
-                          partial(IsVerified)]
+    permission_classes = [
+        IsAuthenticated,
+        partial(IsRole, allowed_roles=['исполнитель', 'заказчик']),
+        partial(IsVerified)
+    ]
 
     def post(self, request):
         user = request.user
+
+        # Получение и валидация суммы
         try:
             amount = Decimal(request.data.get('amount'))  # Приводим к Decimal
         except (ValueError, TypeError):
@@ -31,6 +34,7 @@ class CreateWithdrawalRequest(APIView):
                 "error": "Некорректное значение суммы. Введите корректное число."
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # Проверка обязательных полей
         card_number = request.data.get('card_number')
         if not card_number:
             return Response({
@@ -52,7 +56,7 @@ class CreateWithdrawalRequest(APIView):
 
         if last_withdrawal:
             days_since_last_withdrawal = (timezone.now().date() - last_withdrawal.date_submitted.date()).days
-            remaining_days = max(7 - days_since_last_withdrawal, 0)  # Минимум 0 дней, чтобы избежать отрицательных значений
+            remaining_days = max(7 - days_since_last_withdrawal, 0)
 
             # Если за последние 7 дней уже было 3 успешных вывода — запретить новый вывод
             week_ago = timezone.now() - timedelta(days=7)
@@ -66,22 +70,23 @@ class CreateWithdrawalRequest(APIView):
                     "error": f"Вы превысили количество выводов на этой неделе, вывести денежные средства вы сможете через {remaining_days} дней"
                 }, status=status.HTTP_400_BAD_REQUEST)
 
-        # Проводим транзакцию: переводим средства с фиатного баланса на замороженный
+        # Проводим транзакцию с использованием process_transaction
         try:
             transaction_result = process_transaction(
                 user_from=user,
                 amount=amount,
-                transaction_type="freeze",
+                transaction_type="freeze",  # Заморозка средств на вывод
                 comment="На рассмотрении на вывод"
             )
 
-            # Проверяем результат транзакции
+            # Проверка статуса транзакции
             if transaction_result['status'] == 'failed':
+                # Если транзакция не прошла, создаем заявку со статусом "cancelled_whores"
                 withdrawal_request = WithdrawalRequest.objects.create(
                     user=user,
                     amount=amount,
                     card_number=card_number,
-                    status="cancelled_whores",
+                    status="cancelled_whores",  # Статус отклонённой заявки
                     transaction=transaction_result['transaction'],
                     comment=comment
                 )
@@ -94,11 +99,12 @@ class CreateWithdrawalRequest(APIView):
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             else:
+                # Если транзакция прошла успешно, создаем заявку на вывод в статусе "pending"
                 withdrawal_request = WithdrawalRequest.objects.create(
                     user=user,
                     amount=amount,
                     card_number=card_number,
-                    status="pending",
+                    status="pending",  # Статус ожидания
                     transaction=transaction_result['transaction'],
                     comment=comment
                 )
@@ -113,6 +119,7 @@ class CreateWithdrawalRequest(APIView):
             return Response({
                 "error": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UserWithdrawalRequests(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated,
@@ -156,7 +163,6 @@ class FinanceWithdrawalRequests(viewsets.ReadOnlyModelViewSet):
         return queryset
 
 
-
 class ApproveRejectWithdrawalRequest(APIView):
     permission_classes = [IsAuthenticated, partial(IsRole, allowed_roles=["finance"])]
 
@@ -174,31 +180,18 @@ class ApproveRejectWithdrawalRequest(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if action == "approve":
-            try:
-                # Создаём новую транзакцию для вывода средств
-                transaction = Transaction.objects.create(
-                    profile=withdrawal_request.user.profile,
-                    amount=withdrawal_request.amount,
-                    transaction_type="withdrawal",
-                    status="pending",
-                    comment="Вывод средств на БК"
-                )
+        # Функция для обработки успешного вывода
+        def handle_approve():
+            transaction_result = process_transaction(
+                user_from=withdrawal_request.user,
+                amount=withdrawal_request.amount,
+                transaction_type="withdrawal",
+                comment="Вывод средств на БК",
+            )
 
-                # Проводим транзакцию через процессинг
-                transaction_result = process_transaction(
-                    user_from=withdrawal_request.user,
-                    amount=withdrawal_request.amount,
-                    transaction_type="withdrawal",
-                    comment="Вывод средств на БК",
-                )
-
-                # Если транзакция успешна, обновляем её статус
-                transaction.status = "completed"
-                transaction.dsc = transaction_result.get('dsc', '')
-                transaction.save()
-
-                # Обновляем заявку
+            if transaction_result['status'] == 'completed':
+                # Обновляем статус транзакции и заявки
+                transaction = transaction_result['transaction']
                 withdrawal_request.status = "completed"
                 withdrawal_request.transaction = transaction  # Привязываем транзакцию к заявке
                 withdrawal_request.comment_whores = f"comment: {transaction.dsc}"
@@ -207,76 +200,55 @@ class ApproveRejectWithdrawalRequest(APIView):
                 return Response(
                     {"status": "success", "message": "Заявка одобрена и обработана"}
                 )
-
-            except ValueError as e:
-                # Ошибка при первой попытке - переводим в cancelled_whores и возвращаем средства
-                transaction.status = "failed"
-                transaction.error_message = str(e)
-                transaction.save()
-
-                withdrawal_request.status = "cancelled_whores"
-                withdrawal_request.transaction = transaction  # Привязываем неудачную транзакцию
-                withdrawal_request.comment_whores = f"comment: {str(e)}"
-                withdrawal_request.save()
-
-                process_transaction(
-                    user_from=withdrawal_request.user,
-                    amount=withdrawal_request.amount,
-                    transaction_type="unfreeze",
-                    comment="Возврат средств с замороженного счета на фиатный",
-                )
-
+            else:
+                # Если транзакция не прошла успешно, откатываем изменения
                 return Response(
-                    {
-                        "status": "failed",
-                        "message": "Ошибка при обработке вывода, средства возвращены на фиатный счет",
-                    }
+                    {"status": "failed", "message": "Ошибка при обработке вывода"},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        elif action == "reject":
-            # Проверяем, введён ли комментарий
+        # Функция для обработки отклонения заявки
+        def handle_reject():
             if not comment:
                 return Response(
                     {"error": "При отклонении заявки поле комментарий является обязательным"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Создаём транзакцию на разморозку средств
-            transaction = Transaction.objects.create(
-                profile=withdrawal_request.user.profile,
-                amount=withdrawal_request.amount,
-                transaction_type="unfreeze",
-                status="pending",
-                comment="Возврат средств после отклонения заявки"
-            )
-
-            # Отклоняем заявку
-            withdrawal_request.status = "cancelled"
-            withdrawal_request.transaction = transaction  # Привязываем транзакцию к заявке
-            withdrawal_request.comment_whores = comment
-            withdrawal_request.save()
-
-            # Проводим транзакцию на возврат средств
-            process_transaction(
+            # Проводим транзакцию на возврат средств с замороженного счета на фиатный
+            transaction_result = process_transaction(
                 user_from=withdrawal_request.user,
                 amount=withdrawal_request.amount,
                 transaction_type="unfreeze",
-                comment="Возврат средств с замороженного счета на фиатный после отклонения заявки",
+                comment="Возврат средств после отклонения заявки"
             )
 
-            transaction.status = "completed"
-            transaction.save()
+            if transaction_result['status'] == 'completed':
+                # Обновляем статус заявки
+                withdrawal_request.status = "cancelled"
+                withdrawal_request.comment_whores = comment
+                withdrawal_request.save()
 
-            return Response(
-                {"status": "success", "message": "Заявка отклонена, средства возвращены на фиатный счет"}
-            )
+                return Response(
+                    {"status": "success", "message": "Заявка отклонена, средства возвращены на фиатный счет"}
+                )
+            else:
+                return Response(
+                    {"status": "failed", "message": "Ошибка при возврате средств с замороженного счета"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        if action == "approve":
+            return handle_approve()
+
+        elif action == "reject":
+            return handle_reject()
 
         else:
             return Response(
                 {"error": "Некорректное действие"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
 
 class BonusTransferView(APIView):
     permission_classes = [IsAuthenticated,

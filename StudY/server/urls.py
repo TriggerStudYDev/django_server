@@ -45,10 +45,6 @@ urlpatterns = [
     # Авторизация
     path('auth/login/', LoginAPIView.as_view(), name='login'),
 
-    # TODO Обновленная регистрация, пока не работает
-
-
-
     path('auth/referral-check/', ReferralTokenCheckAPIView.as_view(), name="referal-user-get"),
 
 
