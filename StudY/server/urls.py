@@ -15,11 +15,10 @@ router.register(r'auth/discipline', DisciplineViewSet)
 router.register(r'auth/education-forms', FormOfStudyViewSet)
 router.register(r'auth/customer-feedback', CustomerFeedbackViewSet)
 router.register(r'auth/portfolio', PortfolioViewSet)
-router.register(r'auth/student-card-comment', StudentCardCommentViewSet)
-# Получение всей информации
+router.register(r'auth/student-card-comment', StudentCardCommentViewSet) # Скорее всего запрос не нужен
+router.register(r'auth/user-roles', UserRoleViewSet, basename='user-roles')
+router.register(r'auth/verification-statuses', VerificationStatusViewSet, basename='verification-statuses')
 router.register(r'auth/student-card', StudentCardViewSet)
-# router.register(r'', ReferralTokenCheckAPIView)
-
 
 urlpatterns = [
     # регистрация user
@@ -35,8 +34,7 @@ urlpatterns = [
     path('auth/registration/portfolio-info/', RegisterPortfolioInfoAPIView.as_view(),
          name='register-portfolio-info'),
     # Обновленная регистрация (через транзакции)
-    path('auth/register', RegisterUserView.as_view(), name='register'),
-
+    path('auth/register/', RegisterUserView.as_view(), name='register'),
     # Изменить статус анкеты
     path('auth/student-card-verification/<int:student_card_id>/', StudentCardVerificationAPIView.as_view(),
          name='student-card-verification'),

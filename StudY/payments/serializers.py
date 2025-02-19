@@ -35,3 +35,15 @@ class BonusTransferSerializer(serializers.Serializer):
 
         data['recipient_profile'] = recipient_profile
         return data
+
+
+class TransactionSerializer(serializers.ModelSerializer):
+    transaction_type = serializers.CharField(source='get_transaction_type_display')
+    status = serializers.CharField(source='get_status_display')
+    comment = serializers.CharField(default="Отсутствует", allow_blank=True)
+    created_at = serializers.DateTimeField(format="%Y-%m-%dT%H:%M:%S")
+    dsc = serializers.CharField(required=False, allow_blank=True)
+
+    class Meta:
+        model = Transaction
+        fields = ['transaction_type', 'amount', 'status', 'comment', 'created_at', 'dsc']

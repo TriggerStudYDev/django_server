@@ -1,5 +1,6 @@
 from django.db import models
 
+
 class Rank(models.Model):
     RANK_TYPE_CHOICES = [
         ('customer', 'Заказчик'),
@@ -57,6 +58,7 @@ class RankSettings(models.Model):
     referral_bonus_invited = models.IntegerField(default=0, verbose_name="Бонус для приглашенного пользователя (₽)")
     discount_orders = models.IntegerField(default=0, verbose_name="Скидка на заказы (%)")
     commission_reduction = models.IntegerField(default=0, verbose_name="Снижение комиссии от заказа (%)")
+    bonus_account_limit = models.IntegerField(default=0, verbose_name="Ограничения бонусного счета (₽)")
 
     # Уникальные привилегии (bool)
     notifications_to_executor = models.BooleanField(default=False, verbose_name="Уведомления исполнителю")
@@ -64,7 +66,9 @@ class RankSettings(models.Model):
     extra_discount_per_order = models.BooleanField(default=False, verbose_name="Дополнительная скидка после каждого заказа")
     visibility_other_universities = models.BooleanField(default=False, verbose_name="Видимость исполнителей из других университетов")
     bonus_to_fiat_transfer = models.BooleanField(default=False, verbose_name="Перевод бонусов в фиат")
-
+    can_print = models.BooleanField(default=False, verbose_name="Возможность печатать")
+    customer_unlimited_fiat_withdrawals = models.BooleanField(default=False,
+                                                              verbose_name="Снятие с фиатного счета без ограничений")
     # Привилегии исполнителя (bool)
     monthly_contests = models.BooleanField(default=False, verbose_name="Участие в ежемесячных конкурсах")
     create_internal_courses = models.BooleanField(default=False, verbose_name="Доступ к созданию внутренних курсов")
@@ -72,6 +76,8 @@ class RankSettings(models.Model):
     upload_work_to_study = models.BooleanField(default=False, verbose_name="Загрузка успешных работ в справочник StudY")
     mandatory_review = models.BooleanField(default=False, verbose_name="Обязательный отзыв от заказчика")
     unlimited_fiat_withdrawals = models.BooleanField(default=False, verbose_name="Вывод фиатных средств без ограничений")
+    executer_unlimited_fiat_withdrawals = models.BooleanField(default=False,
+                                                              verbose_name="Снятие с фиатного счета без ограничений")
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")

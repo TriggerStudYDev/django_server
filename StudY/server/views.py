@@ -20,8 +20,10 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 
-from .decorators import *
+from payments.services import process_transaction
+from rank.services import check_user_rank
 
+from .decorators import *
 
 
 class RegisterGeneralInfoAPIView(generics.CreateAPIView):
@@ -100,13 +102,13 @@ class RegisterProfileInfoAPIView(generics.CreateAPIView):
         # Создаем баланс пользователя, если его нет
         Balance.objects.get_or_create(profile=profile)
 
-
         # Проверяем наличие реферальной связи
         try:
             referral = Referral.objects.get(referred=user)
             referrer = referral.referrer  # Получаем реферера
             if not referrer.is_verification:
-                return
+                return  # Если реферер не верифицирован, не начисляем бонус
+
             # Получаем настройки бонусов в зависимости от роли
             if user.role == 'заказчик':
                 referral_setting = ReferralSettings.objects.get(role='customer', level=1)
@@ -115,26 +117,22 @@ class RegisterProfileInfoAPIView(generics.CreateAPIView):
             else:
                 raise serializers.ValidationError(f"Неизвестная роль для начисления бонуса: {user.role}")
 
-            # Начисляем бонус рефереру
+            # Получаем бонусы для реферера
             bonus_to_referred = referral_setting.bonus_ref_user
-
-            with transaction.atomic():
-
-                # Начисление бонуса приглашенному пользователю
-                Transaction.objects.create(
-                    profile=profile,
-                    amount=bonus_to_referred,
-                    transaction_type="bonus_add",
-                    comment="Бонус за регистрацию по реферальной ссылке",
-                    status="completed"
+            bonus_amount = bonus_to_referred
+                            # + check_user_rank(user=referrer, check_type='referral_bonus_self'))
+            print('---This is check_user_rank - ', check_user_rank(user=referrer, check_type='referral_bonus_invited'))
+            # Начисляем бонус рефереру
+            if bonus_amount > 0:
+                new_transaction = process_transaction(
+                    user_from=profile.user,
+                    amount=bonus_amount,
+                    transaction_type='bonus_add',
+                    comment='Бонус за регистрацию по реферальной ссылке!'
                 )
 
-                # Обновляем баланс пользователей
-                profile.balance.bonus_balance += bonus_to_referred
-                profile.balance.save()
-
         except Referral.DoesNotExist:
-           pass
+            pass  # Если реферал не найден, ничего не делаем
 
 
 class RegisterCustomerFeedbackInfoAPIView(generics.CreateAPIView):
@@ -259,6 +257,22 @@ class StudentCardViewSet(viewsets.ReadOnlyModelViewSet):
         return super().retrieve(request, *args, **kwargs)
 
 
+class UserRoleViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        roles = [dict(id=i, value=role[0], label=role[1]) for i, role in enumerate(User.ROLE_CHOICES)]
+        return Response(roles)
+
+
+class VerificationStatusViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        statuses = [dict(id=i, value=status[0], label=status[1]) for i, status in enumerate(StudentCard.STATUS_CHOICES)]
+        return Response(statuses)
+
+
 class StudentCardUpdateView(APIView):
     permission_classes = [
         IsAuthenticated,
@@ -359,8 +373,6 @@ class FormOfStudyViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
 
 
-
-
 class RegisterUserView(APIView):
     permission_classes = [AllowAny]
 
@@ -406,28 +418,34 @@ class RegisterUserView(APIView):
                 # 4️⃣ Создание баланса
                 Balance.objects.get_or_create(profile=profile)
 
-                # 5️⃣ Создание студенческого билета
-                student_card_data = request.data.get('student_card', {})
-                student_card_serializer = StudentCardRegisterSerializer(
-                    data={**student_card_data, 'user': user.id, 'profile': profile.id}
-                )
+                # 5️⃣ Создание студенческого билета (если is_active_student_card=True)
+                is_active_student_card = request.data.get('is_active_student_card', True)  # По умолчанию True
 
-                if not student_card_serializer.is_valid():
-                    raise ValueError(f"Ошибка в данных студенческого билета: {student_card_serializer.errors}")
-                student_card = student_card_serializer.save()
+                # if is_active_student_card:
+                #     student_card_data = request.data.get('student_card', {})
+                #     student_card_serializer = StudentCardRegisterSerializer(
+                #         data={**student_card_data, 'user': user.id, 'profile': profile.id}
+                #     )
+                #
+                #     if not student_card_serializer.is_valid():
+                #         raise ValueError(f"Ошибка в данных студенческого билета: {student_card_serializer.errors}")
+                #
+                #     student_card = student_card_serializer.save()
 
                 # 6️⃣ Обрабатываем загрузку портфолио и обратных связей, если роль исполнителя
                 if user.role == 'исполнитель':
                     portfolio_data = request.data.get('portfolio', [])
                     for item in portfolio_data:
-                        portfolio_serializer = RegisterPortfolioSerializer(data={**item, 'user': user.id, 'profile': profile.id})
+                        portfolio_serializer = RegisterPortfolioSerializer(
+                            data={**item, 'user': user.id, 'profile': profile.id})
                         if not portfolio_serializer.is_valid():
                             raise ValueError(f"Ошибка в данных портфолио: {portfolio_serializer.errors}")
                         portfolio = portfolio_serializer.save()
 
                     feedback_data = request.data.get('customer_feedback', [])
                     for item in feedback_data:
-                        feedback_serializer = RegisterCustomerFeedbackSerializer(data={**item, 'user': user.id, 'profile': profile.id})
+                        feedback_serializer = RegisterCustomerFeedbackSerializer(
+                            data={**item, 'user': user.id, 'profile': profile.id})
                         if not feedback_serializer.is_valid():
                             raise ValueError(f"Ошибка в данных обратной связи: {feedback_serializer.errors}")
                         feedback = feedback_serializer.save()
@@ -492,6 +510,7 @@ class RegisterUserView(APIView):
             feedback.delete()  # Удаляем обратную связь, если была создана
         if user:
             user.delete()  # Удаляем пользователя, если был создан
+
 
 class LoginAPIView(APIView):
     permission_classes = [AllowAny]

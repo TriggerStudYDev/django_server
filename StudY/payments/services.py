@@ -40,6 +40,7 @@ def process_transaction(
         comment: str = "",
         commission: int = 0,
         use_bonus: bool = False,
+
 ):
     """
     Функция обработки платежей в системе.
@@ -110,8 +111,8 @@ def process_transaction(
                 fiat_used = amount + commission_amount
                 dsc_message = generate_transaction_description(transaction_type, amount, bonus_used, fiat_used)
 
-                receiver_balance.frozen_balance += amount
-                comment = comment or "Оплата заказа"
+                # receiver_balance.frozen_balance += amount
+                comment = comment or "Оплата с фиатного счета"
 
             elif transaction_type == "refund":
                 sender_balance.fiat_balance += amount
@@ -169,7 +170,10 @@ def process_transaction(
         transaction = create_transaction(user_from.profile, amount, transaction_type, "Ошибка платежа", "failed",
                                          error_message)
 
-        return {"status": "failed", "comment": "Ошибка платежа", "dsc": dsc_message, "error": error_message,
+        return {"status": "failed",
+                "comment": "Ошибка платежа",
+                "dsc": dsc_message,
+                "error": error_message,
                 "transaction": transaction_to_dict(transaction)}
 
 def transaction_to_dict(transaction):

@@ -13,9 +13,15 @@ router = SimpleRouter()
 router.register(r'user-withdrawal', UserWithdrawalRequests, basename='user-withdrawal')
 router.register(r'finance-withdrawal', FinanceWithdrawalRequests, basename='finance-withdrawal')
 router.register(r'balance', BalanceViewSet, basename='user-balance')
+router.register(r'transactions', TransactionViewSet, basename='transaction')
+
+router.register(r'transactions-finance', TransactionForFinanceViewSet, basename='finance-transaction')
+
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('transaction-types/', TransactionTypesView.as_view(), name='transaction-types'),
+
     path('create-withdrawal/', CreateWithdrawalRequest.as_view(), name='create-withdrawal'),
     path('approve-reject-withdrawal/<int:pk>/', ApproveRejectWithdrawalRequest.as_view(),
          name='approve-reject-withdrawal/'),

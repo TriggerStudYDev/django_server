@@ -1,13 +1,17 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from decimal import Decimal
 from functools import partial
 
 from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import OrderingFilter
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
+
+from .filters import *
 from .models import WithdrawalRequest, Balance
 from server.decorators import *
 from rest_framework import generics, viewsets
@@ -25,6 +29,12 @@ class CreateWithdrawalRequest(APIView):
 
     def post(self, request):
         user = request.user
+
+        # Проверка на наличие активной заявки со статусом "pending"
+        if WithdrawalRequest.objects.filter(user=user, status="pending").exists():
+            return Response({
+                "error": "У вас уже есть активная заявка на вывод средств"
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         # Получение и валидация суммы
         try:
@@ -120,7 +130,6 @@ class CreateWithdrawalRequest(APIView):
                 "error": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
 
-
 class UserWithdrawalRequests(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated,
                           partial(IsRole, allowed_roles=['исполнитель', 'заказчик']),
@@ -189,7 +198,7 @@ class ApproveRejectWithdrawalRequest(APIView):
                 comment="Вывод средств на БК",
             )
 
-            if transaction_result['status'] == 'completed':
+            if transaction_result['status'] == 'success':
                 # Обновляем статус транзакции и заявки
                 transaction = transaction_result['transaction']
                 withdrawal_request.status = "completed"
@@ -220,13 +229,13 @@ class ApproveRejectWithdrawalRequest(APIView):
                 user_from=withdrawal_request.user,
                 amount=withdrawal_request.amount,
                 transaction_type="unfreeze",
-                comment="Возврат средств после отклонения заявки"
+                comment="Возврат средств после отклонения заявки",
             )
 
-            if transaction_result['status'] == 'completed':
+            if transaction_result['status'] == 'success':
                 # Обновляем статус заявки
                 withdrawal_request.status = "cancelled"
-                withdrawal_request.comment_whores = comment
+                withdrawal_request.comment = comment
                 withdrawal_request.save()
 
                 return Response(
@@ -249,6 +258,7 @@ class ApproveRejectWithdrawalRequest(APIView):
                 {"error": "Некорректное действие"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
 
 class BonusTransferView(APIView):
     permission_classes = [IsAuthenticated,
@@ -308,3 +318,44 @@ class BalanceViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         # Получаем баланс только для текущего пользователя
         return Balance.objects.filter(profile__user=self.request.user)
+
+
+class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Transaction.objects.filter(status="completed")
+    serializer_class = TransactionSerializer
+    permission_classes = [IsAuthenticated,
+                          partial(IsRole, allowed_roles=['исполнитель', 'заказчик']),
+                          partial(IsVerified)
+                          ]
+
+    filter_backends = (DjangoFilterBackend, OrderingFilter)
+    filterset_class = TransactionFilter
+    ordering_fields = ['created_at', 'amount']
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        return Transaction.objects.filter(profile__user=self.request.user, status="completed")
+
+
+class TransactionTypesView(APIView):
+    permission_classes = [IsAuthenticated,
+                          partial(IsRole, allowed_roles=['finance']),
+                          ]
+
+    def get(self, request):
+        # Возвращаем список типов транзакций
+        transaction_types = dict(Transaction.TRANSACTION_TYPES)  # Преобразуем к словарю для удобства
+        return Response(transaction_types)
+
+
+class TransactionForFinanceViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Transaction.objects.all()
+    serializer_class = TransactionSerializer
+    permission_classes = [IsAuthenticated,
+                          partial(IsRole, allowed_roles=['finance']),
+                          ]
+
+    filter_backends = (DjangoFilterBackend, OrderingFilter)
+    filterset_class = TransactionForFinanceFilter
+    ordering_fields = ['created_at', 'amount']
+    ordering = ['-created_at']
