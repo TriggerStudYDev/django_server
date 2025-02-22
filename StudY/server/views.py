@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import partial
 
 from rest_framework.viewsets import ModelViewSet
@@ -119,17 +120,15 @@ class RegisterProfileInfoAPIView(generics.CreateAPIView):
 
             # Получаем бонусы для реферера
             bonus_to_referred = referral_setting.bonus_ref_user
-            bonus_amount = bonus_to_referred
-                            # + check_user_rank(user=referrer, check_type='referral_bonus_self'))
-            print('---This is check_user_rank - ', check_user_rank(user=referrer, check_type='referral_bonus_invited'))
+
+
             # Начисляем бонус рефереру
-            if bonus_amount > 0:
-                new_transaction = process_transaction(
-                    user_from=profile.user,
-                    amount=bonus_amount,
-                    transaction_type='bonus_add',
-                    comment='Бонус за регистрацию по реферальной ссылке!'
-                )
+            if bonus_to_referred > 0:
+                new_transaction = process_transaction(user_from=profile, amount=bonus_to_referred,
+                                                      rank_commission=check_user_rank(user=referrer, check_type='referral_bonus_self'),
+                                                      transaction_type='bonus_add',
+                                                      comment='Бонус за регистрацию по реферальной ссылке!',
+                                                      is_profile=True)
 
         except Referral.DoesNotExist:
             pass  # Если реферал не найден, ничего не делаем

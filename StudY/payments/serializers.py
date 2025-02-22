@@ -11,7 +11,7 @@ from server.models import *
 class WithdrawalRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = WithdrawalRequest
-        fields = ['id', 'amount', 'status', 'date_submitted', 'comment', 'card_number']
+        fields = ['id', 'user', 'amount', 'status', 'date_submitted', 'comment', 'card_number', ]
 
 
 class BalanceSerializer(serializers.ModelSerializer):

@@ -24,7 +24,7 @@ urlpatterns = [
     # регистрация user
     path('auth/registration/general-info/', RegisterGeneralInfoAPIView.as_view(), name='register-general-info'),
     # регистрация profile
-    path('auth/registration/profile', RegisterProfileInfoAPIView.as_view(), name='register-profile'),
+    path('auth/registration/profile/', RegisterProfileInfoAPIView.as_view(), name='register-profile'),
     # регистрация заявки на верификацию
     path('auth/registration/education-info/', RegisterEducationInfoAPIView.as_view(), name='register-education-info'),
     # Добавление обратной связи для исполнителей

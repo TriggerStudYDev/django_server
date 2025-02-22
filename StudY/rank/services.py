@@ -3,34 +3,37 @@ from django.core.exceptions import ObjectDoesNotExist
 from .models import RankSettings
 
 
-def check_user_rank(user, check_type):
+from django.core.exceptions import ObjectDoesNotExist
+
+def check_user_rank(user, check_type, is_profile=False):
     """
-    Функция для проверки привилегий пользователя на основе его ранга.
+    Проверяет привилегии пользователя на основе его ранга.
     """
     try:
-        profile = user.profile
+        if is_profile:
+            profile=user
+        else:
+            profile = user.profile
     except ObjectDoesNotExist:
-        print(f"Профиль для пользователя {user} не найден")
+        print(f"Ошибка: Профиль для пользователя {user} не найден.")
         return False
 
+    # Получаем настройки ранга через ранг профиля
     try:
-        rank_settings = RankSettings.objects.get(type_role=user.role, rank=profile.rank)
+        rank_settings = RankSettings.objects.get(rank=profile.rank)
     except RankSettings.DoesNotExist:
-        print(f"Настройки ранга для пользователя {user} не найдены")
+        print(f"Ошибка: Настройки ранга для пользователя {user} (ранг: {profile.rank}) не найдены.")
         return False
 
-    print(f"RankSettings для {user}: {rank_settings}")
-    if check_type in RankSettings._meta.get_fields():
+    # Проверяем наличие запрашиваемого атрибута
+    if hasattr(rank_settings, check_type):
         field = getattr(rank_settings, check_type, None)
 
         if field is None:
-            print(f"Поле {check_type} не найдено в настройках ранга для {user}")
+            print(f"Ошибка: Поле {check_type} не найдено в настройках ранга {profile.rank}.")
             return False
 
-        if isinstance(field, bool):
-            return field
+        return field  # Может быть True, False или числовое значение
 
-        elif isinstance(field, int):
-            return field
-
+    print(f"Ошибка: Атрибут {check_type} отсутствует в модели RankSettings.")
     return False

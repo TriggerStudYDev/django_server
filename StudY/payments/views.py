@@ -82,12 +82,8 @@ class CreateWithdrawalRequest(APIView):
 
         # Проводим транзакцию с использованием process_transaction
         try:
-            transaction_result = process_transaction(
-                user_from=user,
-                amount=amount,
-                transaction_type="freeze",  # Заморозка средств на вывод
-                comment="На рассмотрении на вывод"
-            )
+            transaction_result = process_transaction(user_from=user, amount=amount, transaction_type="freeze",
+                                                     comment="На рассмотрении на вывод")
 
             # Проверка статуса транзакции
             if transaction_result['status'] == 'failed':
@@ -129,6 +125,7 @@ class CreateWithdrawalRequest(APIView):
             return Response({
                 "error": str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UserWithdrawalRequests(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated,
@@ -191,12 +188,9 @@ class ApproveRejectWithdrawalRequest(APIView):
 
         # Функция для обработки успешного вывода
         def handle_approve():
-            transaction_result = process_transaction(
-                user_from=withdrawal_request.user,
-                amount=withdrawal_request.amount,
-                transaction_type="withdrawal",
-                comment="Вывод средств на БК",
-            )
+            transaction_result = process_transaction(user_from=withdrawal_request.user,
+                                                     amount=withdrawal_request.amount, transaction_type="withdrawal",
+                                                     comment="Вывод средств на БК")
 
             if transaction_result['status'] == 'success':
                 # Обновляем статус транзакции и заявки
@@ -225,12 +219,9 @@ class ApproveRejectWithdrawalRequest(APIView):
                 )
 
             # Проводим транзакцию на возврат средств с замороженного счета на фиатный
-            transaction_result = process_transaction(
-                user_from=withdrawal_request.user,
-                amount=withdrawal_request.amount,
-                transaction_type="unfreeze",
-                comment="Возврат средств после отклонения заявки",
-            )
+            transaction_result = process_transaction(user_from=withdrawal_request.user,
+                                                     amount=withdrawal_request.amount, transaction_type="unfreeze",
+                                                     comment="Возврат средств после отклонения заявки")
 
             if transaction_result['status'] == 'success':
                 # Обновляем статус заявки
@@ -286,13 +277,8 @@ class BonusTransferView(APIView):
                 )
 
             # Вызываем функцию обработки транзакции
-            result = process_transaction(
-                user_from=user_from,
-                user_to=user_to,  # Передаем пользователя (не профиль) в функцию
-                amount=amount,
-                transaction_type="bonus_transfer",
-                comment=comment
-            )
+            result = process_transaction(user_from=user_from, user_to=user_to, amount=amount,
+                                         transaction_type="bonus_transfer", comment=comment)
 
             if result['status'] == 'success':
                 return Response({

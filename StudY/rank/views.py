@@ -91,13 +91,9 @@ class RankPurchaseAPIView(APIView):
             )
 
 
-        transaction_response = process_transaction(
-            user_from=user,
-            amount=rank_to_buy.rank_price,
-            transaction_type="payment",
-            comment=f"Оплата ранга {rank_to_buy.rank_name}",
-
-        )
+        transaction_response = process_transaction(user_from=user, amount=rank_to_buy.rank_price,
+                                                   transaction_type="payment",
+                                                   comment=f"Оплата ранга {rank_to_buy.rank_name}")
 
         if transaction_response["status"] == "failed":
             return Response(
