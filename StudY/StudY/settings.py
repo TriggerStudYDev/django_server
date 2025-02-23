@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'customer',
     'payments',
     'rank',
+    'order',
 
     'rest_framework',
     'corsheaders',

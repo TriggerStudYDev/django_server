@@ -323,67 +323,6 @@ class ReferralBonus(models.Model):
         return f"Бонус {self.user.username} - {self.amount}"
 
 
-class Order(models.Model):
-    class Meta:
-        verbose_name = 'Заказ'
-        verbose_name_plural = 'Заказы'
-
-    STATUS_CHOICES = [
-        ('в разработке', 'В разработке'),
-        ('на согласовании', 'На согласовании'),
-        ('отправлен на доработку', 'Отправлен на доработку'),
-        ('завершен', 'Завершен'),
-        ('отклонен', 'Отклонен'),
-    ]
-
-    TYPE_CHOICES = [
-        ('Лекция', 'Лекция'),
-        ('Практика', 'Практика'),
-        ('Лабораторная', 'Лабораторная'),
-        ('Курсовой', 'Курсовой'),
-        ('Диплом', 'Диплом'),
-        ('Другое', 'Другое',)
-    ]
-
-    customer = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='orders', verbose_name='Заказчик')
-    performer = models.ForeignKey(Profile, null=True, blank=True, on_delete=models.SET_NULL,
-                                  related_name='assigned_orders', verbose_name='Исполнитель')
-    title = models.CharField(verbose_name='Название заказа', max_length=255)
-    type_order = models.CharField(verbose_name='Тип заказа', max_length=40, choices=TYPE_CHOICES)
-    description = models.TextField(verbose_name='Описание заказа')
-    cost = models.DecimalField(verbose_name='Стоимость', max_digits=10, decimal_places=2)
-    status = models.CharField(verbose_name='Статус заказа', max_length=30, choices=STATUS_CHOICES,
-                              default='на согласовании')
-    created_at = models.DateTimeField(verbose_name='Дата создания', auto_now_add=True)
-    last_modified_at = models.DateTimeField(verbose_name='Дата последнего изменения', auto_now=True)
-    deadlines = models.DateTimeField(verbose_name='Дедлайн')
-    warranty_period_until = models.DateTimeField(verbose_name='Гарантийный период до', null=True, blank=True)
-
-    def __str__(self):
-        return f'Заказ {self.title} ({self.status})'
-
-
-class OrderStatusLog(models.Model):
-    class Meta:
-        verbose_name = 'Лог статуса заказа'
-        verbose_name_plural = 'Логи статусов заказов'
-
-    ORDER_STATUS_CHOICES = [
-        ('в разработке', 'В разработке'),
-        ('на согласовании', 'На согласовании'),
-        ('отправлен на доработку', 'Отправлен на доработку'),
-        ('завершен', 'Завершен'),
-        ('отклонен', 'Отклонен'),
-    ]
-
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='status_logs', verbose_name='Заказ')
-    status = models.CharField(verbose_name='Статус', max_length=50, choices=ORDER_STATUS_CHOICES)
-    date_changed = models.DateTimeField(verbose_name='Дата изменения', auto_now_add=True)
-    comment = models.TextField(verbose_name='Комментарий', null=True, blank=True)
-
-    def __str__(self):
-        return f'Лог статуса для заказа {self.order.title} ({self.status})'
-
 
 class FailedLoginAttempt(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)

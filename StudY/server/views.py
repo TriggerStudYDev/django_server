@@ -451,7 +451,10 @@ class RegisterUserView(APIView):
 
                 self._process_referral_bonus(user, profile)
 
-                return Response({'message': 'Пользователь успешно зарегистрирован'}, status=status.HTTP_201_CREATED)
+                return Response({'message': 'Пользователь успешно зарегистрирован',
+                                 'user_id': user.id,
+                                 'profile_id': profile.id},
+                                status=status.HTTP_201_CREATED)
 
         except ValueError as e:
             self._delete_user_objects(user, profile, referral, student_card, portfolio, feedback)
