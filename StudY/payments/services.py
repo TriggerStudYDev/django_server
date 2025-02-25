@@ -86,7 +86,7 @@ def process_transaction(
                     comment = comment or "Пополнение бонусов"
                     if is_profile:
                         transaction = create_transaction(
-                            user_from, amount, "bonus_add", comment, "completed"
+                            user_from, amount+ (amount * rank_commission / 100), "bonus_add", comment, "completed"
                         )
                     else:
                         transaction = create_transaction(

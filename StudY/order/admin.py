@@ -9,5 +9,6 @@ admin.site.register(OrderComment)
 admin.site.register(OrderRating)
 admin.site.register(OrderRatingCriteria)
 admin.site.register(ExecutorDiscipline)
+admin.site.register(OrderAdditionComment)
 
 # Register your models here.
