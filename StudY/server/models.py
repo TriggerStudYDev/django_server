@@ -31,6 +31,7 @@ class User(AbstractUser):
     referral_code = models.CharField(
         max_length=20, unique=True, null=True, blank=True, verbose_name="Реферальный код"
     )
+    count_auth = models.IntegerField(verbose_name='Кол-во авторизаций', default=0)
 
     @property
     def has_balance(self):
@@ -136,6 +137,7 @@ class Profile(models.Model):
     faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL, null=True, verbose_name='Факультет')
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, verbose_name='Кафедра')
     disciplines = models.ManyToManyField(Discipline, verbose_name='Дисциплины', null=True, blank=True)
+    course = models.IntegerField(verbose_name='Курс обучения', default=1)
     form_of_study = models.ForeignKey(FormOfStudy, on_delete=models.SET_NULL, null=True, verbose_name='Форма обучения')
     vk_profile = models.CharField(verbose_name='Ссылка на ВКонтакте', max_length=100, blank=True, null=True,
                                   unique=True)
@@ -150,14 +152,16 @@ class StudentCard(models.Model):
 
     STATUS_CHOICES = [
         ('На проверке', 'На проверке'),
+        ('Повторная проверка', 'Повторная проверка'),
         ('Отклонена верификация по СБ', 'Отклонена верификация по СБ'),
         ('Отклонена анкета исполнителя', 'Отклонена анкета исполнителя'),
         ('Отправлен на доработку', 'Отправлен на доработку'),
         ('Принят', 'Принят')
+
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, verbose_name='Пользователь')
-    profile = models.OneToOneField(Profile, on_delete=models.CASCADE, verbose_name='Пользователь')
+    profile = models.OneToOneField(Profile, on_delete=models.CASCADE, verbose_name='Профиль')
     student_card_number = models.CharField(verbose_name='Номер студенческого билета', max_length=100, null=True)
     photo = models.ImageField(verbose_name='Фотография студенческого билета', upload_to='student_cards/%Y/%m/%d/')
     about_self = models.TextField(verbose_name='О себе', null=True, blank=True)
@@ -321,6 +325,9 @@ class ReferralBonus(models.Model):
 
     def __str__(self):
         return f"Бонус {self.user.username} - {self.amount}"
+
+
+
 
 
 

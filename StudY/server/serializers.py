@@ -155,7 +155,7 @@ class StudentCardCommentSerializer(serializers.ModelSerializer):
 class StudentCardRegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentCard
-        fields = ('user', 'profile', 'photo', 'about_self',
+        fields = ('id', 'user', 'profile', 'photo', 'about_self',
 
                   )
 

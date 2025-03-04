@@ -39,11 +39,14 @@ urlpatterns = [
     path('auth/student-card-verification/<int:student_card_id>/', StudentCardVerificationAPIView.as_view(),
          name='student-card-verification'),
     # Обновление анкеты
-    path('auth/student-card/update/', StudentCardUpdateView.as_view(), name='student-card/update/'),
+        path('auth/student-card/update/', StudentCardUpdateView.as_view(), name='student-card/update/'),
     # Авторизация
     path('auth/login/', LoginAPIView.as_view(), name='login'),
 
     path('auth/referral-check/', ReferralTokenCheckAPIView.as_view(), name="referal-user-get"),
+
+    # проверка статуса анкеты по id user
+    path('auth/status-verification-check/', StudentCardStatusView.as_view(), name='status-verification-check'),
 
 
     path('', include(router.urls)),

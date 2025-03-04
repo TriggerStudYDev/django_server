@@ -117,7 +117,7 @@ def process_transaction(
                     transaction_forfeited = create_transaction(
                         user, forfeited_amount, "bonus_forfeited",
                         f"Вам предназначалось {amount}р, к сожалению ваш лимит на бонусный счет заполнен, "
-                        f"остаток {forfeited_amount}р не смогли перевести.", "completed"
+                        f"остаток {forfeited_amount}р не смогли перевести  .", "completed"
                     )
                     sender_balance.save()
                     return {

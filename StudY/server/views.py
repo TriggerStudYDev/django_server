@@ -72,6 +72,7 @@ class RegisterEducationInfoAPIView(generics.CreateAPIView):
     queryset = StudentCard.objects.all()
     serializer_class = StudentCardRegisterSerializer
     permission_classes = [AllowAny]
+    #TODO отдавать id созданной заявки
 
 
 class RegisterProfileInfoAPIView(generics.CreateAPIView):
@@ -154,15 +155,16 @@ class StudentCardVerificationAPIView(APIView):
         student_card = StudentCard.objects.get(id=student_card_id)
 
         if student_card.user.role == 'исполнитель':
-            available_statuses = ['Принят', 'Отклонена анкета исполнителя', 'Отправлен на доработку',
+            available_statuses = ['Принят', 'Повторная проверка', 'Отклонена анкета исполнителя', 'Отправлен на доработку',
                                   'Отклонена верификация по СБ']
         elif student_card.user.role == 'заказчик':
-            available_statuses = ['Принят', 'Отклонена верификация по СБ', 'Отправлен на доработку']
+            available_statuses = ['Принят', 'Повторная проверка', 'Отклонена верификация по СБ', 'Отправлен на доработку']
         else:
             return Response({"detail": "Роль пользователя не поддерживается для верификации."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        immutable_statuses = ['Принят', 'Отклонена анкета исполнителя']
+        immutable_statuses = ['Принят', 'Отклонена анкета исполнителя', 'Отклонена верификация по СБ',
+                              'Отправлен на доработку']
         if student_card.status in immutable_statuses:
             return Response(
                 {"detail": f"Статус '{student_card.status}' нельзя изменить."},
@@ -285,12 +287,100 @@ class StudentCardUpdateView(APIView):
         except StudentCard.DoesNotExist:
             return Response({'detail': 'Анкета не найдена.'}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = StudentCardUpdateSerializer(student_card, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({'detail': 'Анкета успешно обновлена.'}, status=status.HTTP_200_OK)
+        # Проверка, можно ли редактировать анкету
+        if student_card.status in ['На проверке', 'Отклонена анкета исполнителя', 'Принят', 'Повторная проверка', '']:
+            return Response({'detail': 'Редактирование анкеты невозможно в текущем статусе.'}, status=status.HTTP_403_FORBIDDEN)
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        allowed_fields = {
+            'first_name', 'last_name', 'vk_profile', 'telegram_username',
+            'university', 'faculty', 'department', 'course', 'form_of_study',
+            'photo', 'about_self', 'disciplines', 'customer_feedback', 'portfolio'
+        }
+
+        forbidden_fields = set(request.data.keys()) - allowed_fields
+        if forbidden_fields:
+            return Response({'detail': f'Редактирование следующих полей запрещено: {", ".join(forbidden_fields)}'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        profile = student_card.profile
+
+        with transaction.atomic():
+            # Валидация строковых полей
+            for field in ['first_name', 'last_name', 'vk_profile', 'telegram_username', 'about_self']:
+                if field in request.data:
+                    if not isinstance(request.data[field], str):
+                        return Response({f'detail': f'Поле "{field}" должно быть строкой.'},
+                                        status=status.HTTP_400_BAD_REQUEST)
+                    setattr(profile.user if field in ['first_name', 'last_name'] else profile, field, request.data[field])
+
+            # Валидация ID-шников (должны быть целыми числами)
+            for field in ['university', 'faculty', 'department', 'course', 'form_of_study']:
+                if field in request.data:
+                    try:
+                        setattr(profile, f"{field}_id", int(request.data[field]))
+                    except ValueError:
+                        return Response({f'detail': f'Поле "{field}" должно быть целым числом.'},
+                                        status=status.HTTP_400_BAD_REQUEST)
+
+            # Валидация фото студенческого билета
+            if 'photo' in request.FILES:
+                student_card.photo = request.FILES['photo']
+
+            # Валидация дисциплин
+            if 'disciplines' in request.data:
+                discipline_ids = request.data.get('disciplines')
+
+                print(f"DEBUG: received disciplines: {discipline_ids}")  # Логируем входные данные
+
+                if not isinstance(discipline_ids, list):
+                    return Response({'detail': 'Дисциплины должны передаваться в виде массива ID.'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                try:
+                    discipline_ids = [int(d) for d in discipline_ids]
+                except ValueError:
+                    return Response({'detail': 'ID дисциплин должны быть числами.'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                # Проверяем существование дисциплин в базе
+                valid_disciplines = Discipline.objects.filter(id__in=discipline_ids)
+                if len(valid_disciplines) != len(discipline_ids):
+                    return Response({'detail': 'Некоторые ID дисциплин некорректны или отсутствуют в базе.'},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                # Устанавливаем дисциплины пользователю
+                profile.disciplines.set(valid_disciplines)
+
+            # Валидация файлов (отзывы заказчиков и портфолио)
+            for field, model in [('customer_feedback', CustomerFeedback), ('portfolio', Portfolio)]:
+                if field in request.FILES:
+                    files = request.FILES.getlist(field)
+
+                    # Проверяем, что загруженные файлы действительно являются файлами
+                    if not all(hasattr(f, 'read') for f in files):
+                        return Response({'detail': f'Файлы для "{field}" должны быть корректными файлами.'},
+                                        status=status.HTTP_400_BAD_REQUEST)
+
+                    # Создаём новые объекты в соответствующей модели
+                    for file in files:
+                        model.objects.create(student_card=student_card, photo=file)
+
+            # Обновление статуса анкеты
+            student_card.status = 'Повторная проверка'
+
+            profile.user.save()
+            profile.save()
+            student_card.save()
+
+        return Response({'detail': 'Анкета успешно обновлена.'}, status=status.HTTP_200_OK)
+
+    def replace_related_documents(self, student_card, model, files):
+        """
+        Полное обновление связанных документов (CustomerFeedback и Portfolio)
+        """
+        model.objects.filter(student_card=student_card).delete()  # Удаляем старые записи
+        for file in files:
+            model.objects.create(student_card=student_card, photo=file)
 
 
 class CustomerFeedbackViewSet(viewsets.ReadOnlyModelViewSet):
@@ -514,6 +604,39 @@ class RegisterUserView(APIView):
             user.delete()  # Удаляем пользователя, если был создан
 
 
+class StudentCardStatusView(APIView):
+    permission_classes = [AllowAny]
+    """
+    API-эндпоинт для получения статуса анкеты пользователя.
+    """
+
+    def post(self, request, *args, **kwargs):
+        """
+        Получение статуса анкеты по пользователю.
+        Ожидаемый параметр в теле запроса: `user_id`
+        """
+
+        # Проверяем, передан ли user_id
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response({'detail': 'Необходимо передать user_id.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Проверяем, существует ли пользователь
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'detail': 'Пользователь не найден.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Проверяем, существует ли анкета (StudentCard)
+        try:
+            student_card = StudentCard.objects.get(user=user)
+        except StudentCard.DoesNotExist:
+            return Response({'detail': 'Анкета не найдена.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Возвращаем статус анкеты
+        return Response({'status': student_card.status}, status=status.HTTP_200_OK)
+
+
 class LoginAPIView(APIView):
     permission_classes = [AllowAny]
 
@@ -625,11 +748,23 @@ class LoginAPIView(APIView):
         access_token = str(refresh.access_token)
         refresh_token = str(refresh)
 
+        if user.is_verification:
+            user.count_auth += 1
+            user.save()
+        if user.count_auth > 1:
+            is_start_auth = False
+        else:
+            if user.is_verification:
+                is_start_auth = True
+            else:
+                is_start_auth = False
+
         user_data = {
             "id": user.id,
             "username": user.username,
             "role": user.role,
             "is_verification": user.is_verification,
+            'is_start_auth': is_start_auth
         }
 
         return Response(
