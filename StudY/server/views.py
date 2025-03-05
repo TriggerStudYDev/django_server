@@ -1,6 +1,7 @@
 from decimal import Decimal
 from functools import partial
 
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -125,11 +126,11 @@ class RegisterProfileInfoAPIView(generics.CreateAPIView):
 
             # Начисляем бонус рефереру
             if bonus_to_referred > 0:
-                new_transaction = process_transaction(user_from=profile, amount=bonus_to_referred,
-                                                      rank_commission=check_user_rank(user=referrer, check_type='referral_bonus_self'),
-                                                      transaction_type='bonus_add',
-                                                      comment='Бонус за регистрацию по реферальной ссылке!',
-                                                      is_profile=True)
+                process_transaction(user_from=profile, amount=bonus_to_referred,
+                                    rank_commission=check_user_rank(user=referrer, check_type='referral_bonus_self'),
+                                    transaction_type='bonus_add',
+                                    comment='Бонус за регистрацию по реферальной ссылке!',
+                                    is_profile=True)
 
         except Referral.DoesNotExist:
             pass  # Если реферал не найден, ничего не делаем
@@ -477,8 +478,8 @@ class RegisterUserView(APIView):
             with transaction.atomic():
                 # 1️⃣ Создание пользователя
                 user_serializer = UserSerializer(data=request.data.get('user'))
-                referral_code = request.data.get('referral_code')
-
+                referral_code = request.data.get('referrer_code')
+                print(f'DEBUG реф код {referral_code}')
                 if not user_serializer.is_valid():
                     raise ValueError(f"Ошибка в данных пользователя: {user_serializer.errors}")
 
@@ -488,8 +489,9 @@ class RegisterUserView(APIView):
                 if referral_code:
                     try:
                         referrer = User.objects.get(referral_code=referral_code)
+                        print(f'DEBUG Найден реферал {referrer}')
                         referral = Referral.objects.create(referrer=referrer, referred=user)
-                    except User.DoesNotExist:
+                    except ObjectDoesNotExist:
                         raise ValueError("Некорректный реферальный код")
 
                 # 3️⃣ Создание профиля
@@ -507,39 +509,14 @@ class RegisterUserView(APIView):
                 # 4️⃣ Создание баланса
                 Balance.objects.get_or_create(profile=profile)
 
-                # 5️⃣ Создание студенческого билета (если is_active_student_card=True)
-                is_active_student_card = request.data.get('is_active_student_card', True)  # По умолчанию True
-
-                # if is_active_student_card:
-                #     student_card_data = request.data.get('student_card', {})
-                #     student_card_serializer = StudentCardRegisterSerializer(
-                #         data={**student_card_data, 'user': user.id, 'profile': profile.id}
-                #     )
-                #
-                #     if not student_card_serializer.is_valid():
-                #         raise ValueError(f"Ошибка в данных студенческого билета: {student_card_serializer.errors}")
-                #
-                #     student_card = student_card_serializer.save()
-
-                # 6️⃣ Обрабатываем загрузку портфолио и обратных связей, если роль исполнителя
+                # 5️⃣ Обрабатываем загрузку портфолио и отзывов (если роль исполнителя)
                 if user.role == 'исполнитель':
-                    portfolio_data = request.data.get('portfolio', [])
-                    for item in portfolio_data:
-                        portfolio_serializer = RegisterPortfolioSerializer(
-                            data={**item, 'user': user.id, 'profile': profile.id})
-                        if not portfolio_serializer.is_valid():
-                            raise ValueError(f"Ошибка в данных портфолио: {portfolio_serializer.errors}")
-                        portfolio = portfolio_serializer.save()
+                    self._process_portfolio_and_feedback(user, profile, request)
 
-                    feedback_data = request.data.get('customer_feedback', [])
-                    for item in feedback_data:
-                        feedback_serializer = RegisterCustomerFeedbackSerializer(
-                            data={**item, 'user': user.id, 'profile': profile.id})
-                        if not feedback_serializer.is_valid():
-                            raise ValueError(f"Ошибка в данных обратной связи: {feedback_serializer.errors}")
-                        feedback = feedback_serializer.save()
-
+                # 6️⃣ Начисляем реферальный бонус (только новому пользователю)
+                print('Начинаю процедуру зачислений бонусов')
                 self._process_referral_bonus(user, profile)
+                print('Закончил процедуру зачислений бонусов')
 
                 return Response({'message': 'Пользователь успешно зарегистрирован',
                                  'user_id': user.id,
@@ -555,41 +532,57 @@ class RegisterUserView(APIView):
             return Response({'error': f"Ошибка на сервере: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _process_referral_bonus(self, user, profile):
-        """Обработка реферального бонуса"""
+        """Начисление бонуса только новому пользователю"""
         try:
+            print('DEBUG Начисление бонуса только новому пользователю')
             referral = Referral.objects.get(referred=user)
             referrer = referral.referrer  # Получаем реферера
             if not referrer.is_verification:
-                return
-            # Получаем настройки бонусов в зависимости от роли
+                print('реферер не верифицирован, не начисляем бонус')
+                return  # Если реферер не верифицирован, не начисляем бонус
+
+            # Получаем настройки бонуса только для нового пользователя
             if user.role == 'заказчик':
                 referral_setting = ReferralSettings.objects.get(role='customer', level=1)
             elif user.role == 'исполнитель':
                 referral_setting = ReferralSettings.objects.get(role='executor', level=1)
             else:
-                raise serializers.ValidationError(f"Неизвестная роль для начисления бонуса: {user.role}")
+                raise ValueError(f"Неизвестная роль для начисления бонуса: {user.role}")
 
-            # Начисляем бонус рефереру
+            # Бонус только новому пользователю
             bonus_to_referred = referral_setting.bonus_ref_user
-
-            with transaction.atomic():
-                # Начисление бонуса приглашенному пользователю
-                Transaction.objects.create(
-                    profile=profile,
-                    amount=bonus_to_referred,
-                    transaction_type="bonus_add",
-                    comment="Бонус за регистрацию по реферальной ссылке",
-                    status="completed"
-                )
-
-                # Обновляем баланс пользователей
-                profile.balance.fiat_balance += bonus_to_referred
-                profile.balance.save()
+            print(f'Перевод бонусов: {profile.user.username}'
+                  f'Доп начисления (в %): {check_user_rank(user=referrer, check_type="referral_bonus_self")}')
+            if bonus_to_referred > 0:
+                process_transaction(user_from=profile, amount=bonus_to_referred,
+                                    rank_commission=check_user_rank(user=referrer, check_type='referral_bonus_self'),
+                                    transaction_type='bonus_add',
+                                    comment='Бонус за регистрацию по реферальной ссылке!',
+                                    is_profile=True)
 
         except Referral.DoesNotExist:
-            pass
+            pass  # Если реферал не найден, ничего не делаем
+
+    def _process_portfolio_and_feedback(self, user, profile, request):
+        """Обработка загрузки портфолио и отзывов"""
+        portfolio_data = request.data.get('portfolio', [])
+        for item in portfolio_data:
+            portfolio_serializer = RegisterPortfolioSerializer(
+                data={**item, 'user': user.id, 'profile': profile.id})
+            if not portfolio_serializer.is_valid():
+                raise ValueError(f"Ошибка в данных портфолио: {portfolio_serializer.errors}")
+            portfolio_serializer.save()
+
+        feedback_data = request.data.get('customer_feedback', [])
+        for item in feedback_data:
+            feedback_serializer = RegisterCustomerFeedbackSerializer(
+                data={**item, 'user': user.id, 'profile': profile.id})
+            if not feedback_serializer.is_valid():
+                raise ValueError(f"Ошибка в данных обратной связи: {feedback_serializer.errors}")
+            feedback_serializer.save()
 
     def _delete_user_objects(self, user, profile, referral=None, student_card=None, portfolio=None, feedback=None):
+        """Удаление всех объектов, если регистрация не удалась"""
         if referral:
             referral.delete()  # Удаляем реферал, если был создан
         if profile:
@@ -602,7 +595,6 @@ class RegisterUserView(APIView):
             feedback.delete()  # Удаляем обратную связь, если была создана
         if user:
             user.delete()  # Удаляем пользователя, если был создан
-
 
 class StudentCardStatusView(APIView):
     permission_classes = [AllowAny]

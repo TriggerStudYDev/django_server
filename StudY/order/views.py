@@ -66,10 +66,9 @@ class OrderDisciplinesViewSet(viewsets.ReadOnlyModelViewSet):
             # Если flat=True → отдаем плоский список дисциплин
             return disciplines_queryset.order_by("id")
 
-        # Prefetch дисциплин, ограничивая их количеством (до 15 на кафедру)
         disciplines_prefetch = Prefetch(
             "discipline_set",
-            queryset=disciplines_queryset.order_by("id")[:2],  # Ограничиваем до 15 дисциплин
+            queryset=disciplines_queryset.order_by("id")[:2],  # Ограничиваем до n дисциплин
             to_attr="disciplines"
         )
 
