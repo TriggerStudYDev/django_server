@@ -723,7 +723,7 @@ class LoginAPIView(APIView):
                         status=status.HTTP_403_FORBIDDEN
                     )
 
-                elif student_card.status == 'На проверке':
+                elif student_card.status in ['На проверке', 'Повторная проверка']:
                     return Response(
                         {"detail": "Ваша анкета еще на проверке."},
                         status=status.HTTP_403_FORBIDDEN

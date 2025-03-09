@@ -498,8 +498,13 @@ class OrderCustomerActionsViewSet(ViewSet):
             order.save(update_fields=['status'])
             OrderStatusLog.objects.create(
                 order=order,
+                status='accepted_customer',
+                comment="Заказ принят заказчиком"
+            )
+            OrderStatusLog.objects.create(
+                order=order,
                 status='in_progress',
-                comment="Заказ перешел на стадию работы"
+                comment="Заказ перешел на этап 'В работе'"
             )
             return Response({'message': 'Заказ запущен в работу', 'new_status': order.status})
 
@@ -508,7 +513,7 @@ class OrderCustomerActionsViewSet(ViewSet):
             order.save(update_fields=['status'])
             OrderStatusLog.objects.create(
                 order=order,
-                status='in_progress',
+                status='not_accepted_customer',
                 comment="Заказ отменен заказчиком"
             )
 
